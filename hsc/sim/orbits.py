@@ -4,7 +4,9 @@ Frames (all right-handed):
 - CBCI: celestial-body-centred inertial (what lbg1 observations use).
 - NTW: x = in-plane normal to velocity (roughly radial out), y = along velocity, z = orbit normal.
 - LVLH (Hill) of a reference vessel: x = radial out, y = along-track, z = orbit normal.
-- Body of the Bandit: forward = +T, right = -W, down = -N (vessel held prograde).
+- Body of the Bandit: forward = +T, right = -N (roughly radial in), down = +W (orbit normal).
+  Assumes the Bandit is held prograde and rolled so its two commandable axes (forward/right)
+  span the orbital plane. Every lbg1 vessel starts in the same plane, so this gives a planar game.
 """
 
 from __future__ import annotations
@@ -57,7 +59,7 @@ def ntw_basis(pos: np.ndarray, vel: np.ndarray) -> np.ndarray:
 def body_basis(pos: np.ndarray, vel: np.ndarray) -> np.ndarray:
     """Rows are the forward, right, down unit vectors of the prograde-held Bandit, in CBCI."""
     n, t, w = ntw_basis(pos, vel)
-    return np.vstack([t, -w, -n])
+    return np.vstack([t, -n, w])
 
 
 def lvlh_basis(pos: np.ndarray, vel: np.ndarray) -> np.ndarray:

@@ -32,7 +32,8 @@ GOAL_SCHEMA = {
 TACTICAL_SYSTEM = SCENARIO_TEXT + """
 You are the TACTICAL PLANNER. Each call you see the mission brief and the recent history. Return the
 short-term goal the fast controller should pursue until your next update: an optional Lady-relative
-waypoint (use one to route around the Guard, for example out of plane on z), speed and keep-out limits,
+waypoint (use one to route around the Guard, for example offset radially on x; the Bandit can
+only thrust in the orbital plane, so keep z = 0), speed and keep-out limits,
 and a mode hint (AUTO lets the fast controller choose; otherwise it is strongly preferred).
 Keep the rationale to one sentence.
 """
@@ -105,7 +106,7 @@ class HaikuTactician:
 
 
 class RuleTactician:
-    """No-model tactical layer: routes out of plane around the Guard when it sits between Bandit and Lady."""
+    """No-model tactical layer: routes radially around the Guard when it sits between Bandit and Lady."""
 
     name = "rule"
 
@@ -114,12 +115,13 @@ class RuleTactician:
         goal = TacticalGoal.from_brief(brief)
         goal.issued_at = s.t
         if s.guard_between and s.lady_dist > 3 * brief.guard_keepout_m:
-            # pass the guard's along-track station offset out of plane by twice the keep-out radius
-            side = 1.0 if s.bandit_rel_pos[2] >= s.guard_rel_pos[2] else -1.0
-            goal.waypoint_lvlh_m = [float(s.guard_rel_pos[0]), float(s.guard_rel_pos[1]),
-                                    float(s.guard_rel_pos[2] + side * 2 * brief.guard_keepout_m)]
+            # pass the guard's along-track station offset radially by twice the keep-out radius
+            # (in-plane only: the two commandable axes span the orbital plane)
+            side = 1.0 if s.bandit_rel_pos[0] >= s.guard_rel_pos[0] else -1.0
+            goal.waypoint_lvlh_m = [float(s.guard_rel_pos[0] + side * 2 * brief.guard_keepout_m),
+                                    float(s.guard_rel_pos[1]), 0.0]
             goal.mode_hint = "GO_TO_WAYPOINT"
-            goal.rationale = "guard blocks the direct line; bypass out of plane"
+            goal.rationale = "guard blocks the direct line; bypass radially"
         else:
             goal.rationale = "direct approach"
         return goal, None

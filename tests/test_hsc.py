@@ -97,7 +97,7 @@ def test_rule_tactician_bypasses_blocking_guard():
     s = situation_from_obs(obs, env.bandit_params.prop_mass, env.episode_timeout)
     assert s.guard_between
     g, _ = RuleTactician().update([s], MissionBrief(), TacticalGoal())
-    assert g.mode_hint == "GO_TO_WAYPOINT" and abs(g.waypoint_lvlh_m[2]) >= 300
+    assert g.mode_hint == "GO_TO_WAYPOINT" and abs(g.waypoint_lvlh_m[0]) >= 300 and g.waypoint_lvlh_m[2] == 0
 
 
 def test_jev_request_shape(monkeypatch):

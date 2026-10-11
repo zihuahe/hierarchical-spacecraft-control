@@ -6,6 +6,13 @@ It copies lbg1's interface so an agent written against it can later run on real 
   (vec_type 0 = throttle, 1 = thrust in N; ref_frame 0 = body, 1 = CBCI, 2 = NTW)
 - info keys and the single-value score: ``dm_lb**2 + 1e6 / (dm_bg + 0.1)`` (lower is better)
 - termination: Lady captured (< 5 m), Bandit captured by Guard (< 5 m), or 240 s timeout
+- the controller API used for this project (scenario LBG1_LG7_I2_V1): forward/backward and
+  right/left throttle in [-1, 1] plus a duration of 0-10 s. With ``two_axis=True`` (default) the
+  up/down axis is ignored and durations are clipped to that range.
+
+Guard policies: ``lg0`` (passive) and ``lg1`` (zero/pursue/coast heuristic) follow the public
+KSPDG source. LG3 and above are code-obfuscated upstream, so ``lg7`` here is a proxy: an
+aggressive continuous pursuer that re-points every step (with a 1 s attitude lag) and never coasts.
 
 Physics is point-mass two-body motion around Kerbin with RK4 integration. RCS thrust and
 Isp come from the KSPDG source (8 x 1 kN fore/aft, 4 x 1 kN per lateral axis, Isp 240 s).
@@ -71,7 +78,8 @@ class EpisodeMetrics:
 
 class LBG1LiteEnv:
     INIT_CONDS = ("i1", "i2")
-    LADY_GUARD_POLICIES = ("lg0", "lg1")
+    LADY_GUARD_POLICIES = ("lg0", "lg1", "lg7")
+    MAX_BURN_DURATION = 10.0  # [s] controller API limit
 
     def __init__(
         self,
@@ -82,6 +90,7 @@ class LBG1LiteEnv:
         sim_dt: float = 0.1,
         seed: int | None = None,
         record_every: float = 1.0,
+        two_axis: bool = True,
     ):
         assert init_cond in self.INIT_CONDS, init_cond
         assert lady_guard_policy in self.LADY_GUARD_POLICIES, lady_guard_policy
@@ -92,6 +101,7 @@ class LBG1LiteEnv:
         self.sim_dt = sim_dt
         self.seed = seed
         self.record_every = record_every
+        self.two_axis = two_axis
         self.bandit_params = VesselParams()
         self.guard_params = VesselParams()  # Bandit and Guard have identical capabilities
         self.lady_mass = 4000.0
@@ -132,8 +142,13 @@ class LBG1LiteEnv:
         states = np.vstack([lady, bandit, guard])
         if self.seed is not None:
             rng = np.random.default_rng(self.seed)
-            states[1:, :3] += rng.normal(0.0, 30.0, size=(2, 3))
-            states[1:, 3:] += rng.normal(0.0, 0.1, size=(2, 3))
+            dp = rng.normal(0.0, 30.0, size=(2, 3))
+            dv = rng.normal(0.0, 0.1, size=(2, 3))
+            if self.two_axis:  # keep the game planar: the Bandit has no out-of-plane thrust
+                dp[:, 2] = 0.0
+                dv[:, 2] = 0.0
+            states[1:, :3] += dp
+            states[1:, 3:] += dv
         return states
 
     def reset(self):
@@ -142,6 +157,7 @@ class LBG1LiteEnv:
         self.bandit_prop = self.bandit_params.prop_mass
         self.guard_prop = self.guard_params.prop_mass
         self.guard_state = _GuardState(phase_start=0.0)
+        self.guard_pointing = None
         self.is_lady_captured = False
         self.is_bandit_captured = False
         self.done = False
@@ -174,6 +190,8 @@ class LBG1LiteEnv:
         else:  # legacy 4-list of body-frame throttles plus duration
             burn_vec, vec_type, ref_frame = np.asarray(action, dtype=float), 0, 0
         duration = max(0.0, float(burn_vec[3]))
+        if self.two_axis:
+            duration = min(duration, self.MAX_BURN_DURATION)
         t_end = min(self.t + duration, self.episode_timeout)
         while self.t < t_end - 1e-9 and not self.done:
             h = min(self.sim_dt, t_end - self.t)
@@ -226,7 +244,10 @@ class LBG1LiteEnv:
             thr = np.array([v_body[0] / f_fwd, v_body[1] / p.thrust_lat, v_body[2] / p.thrust_lat])
         else:
             raise ValueError(f"unknown vec_type {vec_type}")
-        return np.clip(thr, -1.0, 1.0)
+        thr = np.clip(thr, -1.0, 1.0)
+        if self.two_axis:
+            thr[2] = 0.0  # only forward/backward and right/left are commandable
+        return thr
 
     def _bandit_force(self, thr_body: np.ndarray, h: float):
         p = self.bandit_params
@@ -244,6 +265,8 @@ class LBG1LiteEnv:
     def _guard_force(self, h: float):
         if self.lady_guard_policy == "lg0" or self.guard_prop <= 0.0:
             return np.zeros(3), 0.0
+        if self.lady_guard_policy == "lg7":
+            return self._guard_force_lg7(h)
         g = self.guard_pursuit
         gs = self.guard_state
         _, bandit, guard = self.states
@@ -283,6 +306,37 @@ class LBG1LiteEnv:
         mdot = thrust / (self.guard_params.isp * O.G0)
         used = min(self.guard_prop, mdot * h)
         return direction * thrust * (used / (mdot * h)), used
+
+    def _guard_force_lg7(self, h: float):
+        """Proxy for the obfuscated advanced Guard: continuous velocity-matching pursuit."""
+        _, bandit, guard = self.states
+        r_rel = bandit[:3] - guard[:3]
+        v_rel = bandit[3:] - guard[3:]
+        dist = np.linalg.norm(r_rel)
+        thrust = self.guard_params.thrust_fwd
+        a_max = thrust / (self.guard_params.dry_mass + self.guard_prop)
+        # desired closing velocity along the line of sight, braking so it can stay on the bandit
+        v_close = min(12.0, np.sqrt(2 * 0.7 * a_max * dist))
+        v_des_rel = -r_rel / max(dist, 1e-6) * v_close  # bandit relative to guard should shrink
+        a_cmd = (v_rel - v_des_rel) / 2.0  # guard accelerates to cancel the error
+        if np.linalg.norm(a_cmd) < 1e-3:
+            return np.zeros(3), 0.0
+        target = a_cmd / np.linalg.norm(a_cmd)
+        # first-order attitude lag of about 1 s
+        if self.guard_pointing is None:
+            self.guard_pointing = target
+        alpha = min(1.0, h / self.guard_pursuit.reorient_time)
+        p = self.guard_pointing + alpha * (target - self.guard_pointing)
+        self.guard_pointing = p / np.linalg.norm(p)
+        throttle = min(1.0, np.linalg.norm(a_cmd) / a_max)
+        if np.dot(self.guard_pointing, target) < np.cos(np.deg2rad(30)):
+            throttle = 0.0  # don't burn while badly mis-pointed, as the lg1 autopilot does
+        f = thrust * throttle
+        mdot = f / (self.guard_params.isp * O.G0)
+        if mdot == 0:
+            return np.zeros(3), 0.0
+        used = min(self.guard_prop, mdot * h)
+        return self.guard_pointing * f * (used / (mdot * h)), used
 
     def _substep(self, h: float, thr_body: np.ndarray):
         f_b, used_b = self._bandit_force(thr_body, h)

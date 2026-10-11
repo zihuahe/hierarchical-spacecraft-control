@@ -81,7 +81,8 @@ def run_episode(cfg: ControllerConfig, init_cond: str, lady_guard_policy: str, s
     env = LBG1LiteEnv(init_cond, lady_guard_policy, seed=seed)
     obs, _ = env.reset()
     sit = lambda o: situation_from_obs(o, env.bandit_params.prop_mass, env.episode_timeout)  # noqa: E731
-    executor = Executor(cfg.control_period_s)
+    p = env.bandit_params
+    executor = Executor(cfg.control_period_s, p.thrust_fwd, p.thrust_rev, p.thrust_lat)
     logs = {"strategy": LayerLog(), "tactical": LayerLog(), "decider": LayerLog()}
     wall0 = time.perf_counter()
 
@@ -160,7 +161,7 @@ def run_episode(cfg: ControllerConfig, init_cond: str, lady_guard_policy: str, s
 
         deliver()  # zero-latency layers take effect this tick
 
-        action = executor.act(s, obs[9:12], obs[12:15], primitive, goal, brief)
+        action = executor.act(s, obs, primitive, goal, brief)
         action_ages.append(t - primitive_obs_t)
         timeline.append((round(t, 2), primitive))
         obs, _, done, info = env.step(action)

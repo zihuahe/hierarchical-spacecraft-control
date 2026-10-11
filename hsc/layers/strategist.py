@@ -11,15 +11,18 @@ from hsc.layers.llm import OPUS_MODEL, StructuredLLM
 SCENARIO_TEXT = """\
 You command the Bandit spacecraft in the Lady-Bandit-Guard orbital game (KSPDG lbg1) around Kerbin
 (about 75 km altitude, orbital period about 31 minutes). The Lady is a passive target. The Guard has
-the same capability as the Bandit and runs a pursuit heuristic: it zeros its velocity relative to the
-Bandit, then burns straight at it, then coasts. Episodes end after 240 s, when the Bandit gets within
+the same capability as the Bandit and pursues it (in the scenario of record, an advanced Guard that
+re-aims continuously and closes at up to about 12 m/s; easier variants zero relative velocity, burn
+straight at the Bandit, then coast). Episodes end after 240 s, when the Bandit gets within
 5 m of the Lady (win), or when the Guard gets within 5 m of the Bandit (loss).
 
 Score (lower is better): closest_lady_bandit_distance^2 + 1e6 / (closest_bandit_guard_distance + 0.1).
 So 100 m of miss distance from the Lady costs about as much as letting the Guard get within 100 m.
 
-Bandit capability: RCS only, about 2 m/s^2 fore/aft and 1 m/s^2 on the other axes, roughly 250 m/s of
-delta-v in total. The Bandit cannot afford long chases.
+Bandit capability: RCS only, two commandable axes in the orbital plane: forward/backward along-track
+(about 2 m/s^2) and right/left roughly radial (about 1 m/s^2). No out-of-plane thrust. Roughly 250 m/s
+of delta-v in total, so the Bandit cannot afford long chases. Scenario of record: LBG1_LG7_I2_V1
+(advanced Guard; all three vessels start in the same circular orbit, Guard between Bandit and Lady).
 
 Control hierarchy under you: a tactical planner re-plans short-term goals every few seconds from
 recent states, and a fast controller picks one of these maneuver primitives every 0.5 s:

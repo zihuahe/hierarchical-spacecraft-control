@@ -1,4 +1,8 @@
-"""Deterministic executor: turns a maneuver primitive into an lbg1 thrust action.
+"""Deterministic executor: turns a maneuver primitive into a two-axis throttle command.
+
+The controller API exposes only forward/backward and right/left throttle (each -1..1) and a
+duration (0-10 s). With the Bandit held prograde, forward is along-track and right points
+roughly radially inward, so the Bandit has full control in the orbital plane and none out of it.
 
 This is the "game code keeps state authority" half of the immediate-control layer. It
 runs every control tick in microseconds and never calls a model. Guidance is done in the
@@ -36,8 +40,11 @@ def _goto(r, target, vmax, v_final):
 
 
 class Executor:
-    def __init__(self, control_period: float = 0.5):
+    def __init__(self, control_period: float = 0.5, thrust_fwd: float = 8000.0, thrust_rev: float = 8000.0,
+                 thrust_lat: float = 4000.0):
+        assert 0.0 < control_period <= 10.0, "controller API allows 0-10 s per command"
         self.control_period = control_period
+        self.thrust_fwd, self.thrust_rev, self.thrust_lat = thrust_fwd, thrust_rev, thrust_lat
 
     def desired_velocity(self, s: Situation, primitive: str, goal: TacticalGoal, brief: MissionBrief):
         r, v = s.bandit_rel_pos, s.bandit_rel_vel
@@ -58,22 +65,29 @@ class Executor:
             to_lady = _unit(-r)
             side = _unit(to_lady - np.dot(to_lady, away) * away)  # around the guard, toward the lady
             if np.linalg.norm(side) < 1e-6:
-                side = np.array([0.0, 0.0, 1.0])
+                side = np.array([1.0, 0.0, 0.0])  # radial: the only sideways axis in the plane
             return _unit(away + side) * EVADE_SPEED
         if primitive == "COAST":
             return None
         raise ValueError(f"unknown primitive {primitive}")
 
-    def act(self, s: Situation, lady_pos, lady_vel, primitive: str, goal: TacticalGoal, brief: MissionBrief) -> dict:
+    def act(self, s: Situation, obs, primitive: str, goal: TacticalGoal, brief: MissionBrief) -> dict:
+        """Return a two-axis body-frame throttle command (forward/backward, right/left) for one tick."""
         assert primitive in PRIMITIVES, primitive
+        obs = np.asarray(obs, dtype=float)
+        bandit_pos, bandit_vel, lady_pos, lady_vel = obs[3:6], obs[6:9], obs[9:12], obs[12:15]
         v_des = self.desired_velocity(s, primitive, goal, brief)
         if v_des is None:
             force_cbci = np.zeros(3)
         else:
             a_cmd = (v_des - s.bandit_rel_vel) / TAU
             a_thrust_lvlh = a_cmd - _cw_free_accel(s.bandit_rel_pos, s.bandit_rel_vel, s.mean_motion)
-            basis = O.lvlh_basis(np.asarray(lady_pos), np.asarray(lady_vel))
+            basis = O.lvlh_basis(lady_pos, lady_vel)
             force_cbci = basis.T @ (a_thrust_lvlh * s.mass_kg)
             if s.fuel_fraction <= brief.fuel_reserve_fraction and primitive != "EVADE_GUARD":
                 force_cbci = np.zeros(3)  # keep the reserve for evasion
-        return {"burn_vec": [*force_cbci.tolist(), self.control_period], "vec_type": 1, "ref_frame": 1}
+        f_body = O.body_basis(bandit_pos, bandit_vel) @ force_cbci
+        f_fwd = self.thrust_fwd if f_body[0] >= 0 else self.thrust_rev
+        throttle_fwd = float(np.clip(f_body[0] / f_fwd, -1.0, 1.0))
+        throttle_right = float(np.clip(f_body[1] / self.thrust_lat, -1.0, 1.0))
+        return {"burn_vec": [throttle_fwd, throttle_right, 0.0, self.control_period], "vec_type": 0, "ref_frame": 0}

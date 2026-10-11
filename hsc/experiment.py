@@ -144,7 +144,7 @@ def plot_latency_sweep(summary: list[dict], path: pathlib.Path):
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--configs", default="fast_only,rule_hier")
-    ap.add_argument("--scenarios", default="i1:lg1,i2:lg1,i2:lg0", help="comma list of init_cond:lady_guard_policy")
+    ap.add_argument("--scenarios", default="i2:lg7,i2:lg1,i2:lg0,i1:lg1", help="comma list of init_cond:lady_guard_policy")
     ap.add_argument("--seeds", type=int, default=3, help="seeds 0..N-1 (perturbed initial states)")
     ap.add_argument("--haiku-images", action="store_true", help="send a rendered plot of recent motion to Haiku")
     ap.add_argument("--out", default=None, help="output directory (default results/<timestamp>)")
