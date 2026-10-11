@@ -183,7 +183,16 @@ picks a direction from these features. A Kev-only run would probably coast, so c
 deterministic baseline before reading anything into the outcomes.
 
 `results/kev-fixture-check/` holds the same loop with real Kev on the `lbg1_lite` **test fixture**,
-not KSP, to exercise the trace and stop logic end to end.
+not KSP, to exercise the trace and stop logic end to end:
+
+- `20261011-202335-4f08c1.jsonl`: a full fixture episode. All 171 decisions were valid `COAST` answers.
+  Decision latency was median 2.72 s and p95 3.08 s; the 5-step history makes the state longer than in
+  `kev_check`. The fixture's proxy Guard intercepted at mission time 170.2 s. The Bandit used no fuel
+  and its closest Lady approach was 2,600 m, its starting distance. That is a wiring check on a
+  stand-in, not a flight result.
+- `20261011-202159-bb3c44.jsonl`: an earlier run that stopped at step 20 with `model_timeout`. One
+  request took more than 10 s while other CPU-heavy work ran on the same 4 vCPUs. The loop sent no burn
+  and closed the env.
 
 `--env fixture` runs the loop on the `lbg1_lite` stand-in below. It is a **test fixture only**, not
 the real game, and its LG7 Guard is a proxy that captures at 5 m, not LG7's 10 m.
