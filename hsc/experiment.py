@@ -4,6 +4,7 @@
     python -m hsc.experiment --configs latency_sweep --seeds 3
     python -m hsc.experiment --configs hier_rule_fast,flat_haiku,flat_opus --seeds 2   # needs ANTHROPIC_API_KEY
     python -m hsc.experiment --configs hier_jev,hier_no_opus --seeds 2                  # also needs TYPESAFE_API_KEY
+    python -m hsc.experiment --configs kev_discrete,hier_kev --seeds 2                  # local Kev server (KEV_BASE_URL)
 """
 
 from __future__ import annotations
@@ -28,12 +29,17 @@ DESCRIPTIONS = {
     "hier_jev": "Full proposal: Opus brief + Haiku tactical goals + Jev picks maneuvers.",
     "hier_no_opus": "Ablation: default brief + Haiku tactical goals + Jev.",
     "flat_jev": "Jev picks every maneuver with the default brief and no tactical layer.",
+    "rule_discrete": "No models. Rule controller restricted to the 7 raw actions (bang-bang).",
+    "kev_discrete": "First-version plan: local Kev picks one of 7 raw actions each tick, default brief.",
+    "kev": "Local Kev picks guided maneuvers each tick, default brief, no tactical layer.",
+    "hier_kev": "Opus brief + Haiku tactical goals + local Kev picks guided maneuvers.",
+    "hier_kev_discrete": "Opus brief + Haiku tactical goals + local Kev picks raw actions.",
     "latency_sweep": "Rule decider with synthetic decision latency L seconds (fast_only@L).",
 }
 
 
 def make_config(name: str, haiku_images: bool = False) -> list[ControllerConfig]:
-    from hsc.layers.deciders import FlatLLMDecider, JevDecider, RuleDecider
+    from hsc.layers.deciders import DiscreteRuleDecider, FlatLLMDecider, JevDecider, KevDecider, RuleDecider
     from hsc.layers.llm import HAIKU_MODEL, OPUS_MODEL
     from hsc.layers.strategist import FixedStrategist, OpusStrategist
     from hsc.layers.tactician import HaikuTactician, RuleTactician
@@ -54,6 +60,17 @@ def make_config(name: str, haiku_images: bool = False) -> list[ControllerConfig]
         return [ControllerConfig(name, FixedStrategist(), HaikuTactician(use_images=haiku_images), JevDecider())]
     if name == "flat_jev":
         return [ControllerConfig(name, FixedStrategist(), None, JevDecider())]
+    if name == "rule_discrete":
+        return [ControllerConfig(name, FixedStrategist(), None, DiscreteRuleDecider())]
+    if name == "kev_discrete":
+        return [ControllerConfig(name, FixedStrategist(), None, KevDecider(options="discrete"))]
+    if name == "kev":
+        return [ControllerConfig(name, FixedStrategist(), None, KevDecider())]
+    if name == "hier_kev":
+        return [ControllerConfig(name, OpusStrategist(), HaikuTactician(use_images=haiku_images), KevDecider())]
+    if name == "hier_kev_discrete":
+        return [ControllerConfig(name, OpusStrategist(), HaikuTactician(use_images=haiku_images),
+                                 KevDecider(options="discrete"))]
     if name == "latency_sweep":
         return [ControllerConfig(f"fast_only@{L:g}s", FixedStrategist(), None, RuleDecider(), decider_latency_s=L)
                 for L in SWEEP_LATENCIES]

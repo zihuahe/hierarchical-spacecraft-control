@@ -130,3 +130,64 @@ def test_jev_request_shape(monkeypatch):
     q = sent["body"]["questions"]["maneuver"]
     assert q["type"] == "choice" and "EVADE_GUARD" in q["criteria"]
     assert info.model == "jev-1.13.0" and info.extra["confidence"] == 0.9
+
+
+def _stub_systemone_server(choice):
+    """Local HTTP server speaking the System One wire format (what a Kev server exposes)."""
+    import http.server
+    import threading
+
+    seen = []
+
+    class H(http.server.BaseHTTPRequestHandler):
+        def do_POST(self):
+            body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            seen.append((self.path, self.headers.get("Authorization"), body))
+            opts = list(body["questions"]["maneuver"]["criteria"])
+            payload = {"model": body["model"], "answers": {"maneuver": {
+                "type": "choice", "choice": choice, "confidence": 0.5,
+                "probabilities": {o: (0.6 if o == choice else 0.4 / (len(opts) - 1)) for o in opts}}},
+                "usage": {"input_tokens": 200, "output_tokens": 7}, "latency_ms": 12}
+            data = json.dumps(payload).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+        def log_message(self, *a):
+            pass
+
+    srv = http.server.HTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv, seen
+
+
+def test_kev_milestone_against_local_server():
+    from hsc import milestone
+
+    srv, seen = _stub_systemone_server("forward")
+    try:
+        dec = D.KevDecider(base_url=f"http://127.0.0.1:{srv.server_port}", options="discrete")
+        [rec] = milestone.run(dec, steps=1)
+    finally:
+        srv.shutdown()
+    path, auth, body = seen[0]
+    assert path == "/v1/systemone" and auth == "Bearer local" and body["model"] == "kev-latest"
+    assert set(body["questions"]["maneuver"]["criteria"]) == {"coast", "forward", "backward", "left", "right", "up", "down"}
+    assert "hints" in json.loads(body["state"])
+    assert rec["decision"] == "forward" and rec["command"] == {"forward": 0.5, "right": 0.0, "duration_s": 1.0}
+    assert rec["next_observation"][0] == pytest.approx(1.0) and rec["fuel_used_kg"] > 0
+
+
+def test_up_down_execute_as_coast_and_rule_discrete_runs():
+    from hsc.control.executor import Executor
+
+    env = LBG1LiteEnv("i2", "lg0")
+    obs, _ = env.reset()
+    s = situation_from_obs(obs, env.bandit_params.prop_mass, env.episode_timeout)
+    for a in ("up", "down", "coast"):
+        assert Executor(1.0).act(s, obs, a, TacticalGoal(), MissionBrief())["burn_vec"][:3] == [0.0, 0.0, 0.0]
+    r = run_episode(ControllerConfig("rule_discrete", FixedStrategist(), None, D.DiscreteRuleDecider()), "i2", "lg0")
+    moves = {p for _, p in r["primitive_switches"]}
+    assert moves <= {"COAST", "coast", "forward", "backward", "left", "right"} and r["bandit_fuel_kg"] > 0

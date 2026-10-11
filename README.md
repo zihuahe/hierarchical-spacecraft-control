@@ -8,15 +8,41 @@ fast layer picks actions.
 |---|---|---|---|
 | Mission strategy | Claude Opus (`claude-opus-5-5`) | once before the episode | mission brief: objective, approach, keep-out radius, speed limits, fuel reserve, re-plan period |
 | Tactical planning | Claude Haiku (`claude-haiku-5-5`) | asynchronously, every `tactical_period_s` | short-term goal: waypoint (Lady-relative), limits, mode hint |
-| Immediate control | TypeSafe Jev (`jev-latest`) | every 0.25 s whenever free | one of six maneuver primitives |
+| Immediate control | Kev-0.8B (open weights, local server); hosted Jev also supported | every 0.25 s whenever free | one raw action (coast/forward/backward/left/right/up/down) or one of six guided maneuvers |
 | Executor | code, no model | every 0.25 s | lbg1 thrust command |
 
-Jev is a classifier. It answers a `choice` question over a fixed option list and doesn't write text,
-so the immediate-control layer is split in two. Jev picks a maneuver primitive (`APPROACH_LADY`,
+Kev is an open-source, Jev-compatible classifier ([jaredpalmer/kev](https://github.com/jaredpalmer/kev),
+weights on Hugging Face). It runs locally and serves TypeSafe's System One API, so the same client
+talks to Kev or to hosted Jev. It answers a `choice` question over a fixed option list and doesn't
+write text. Two modes are wired up:
+
+- **Raw actions (the first-version plan):** Kev returns one action ID: coast, forward, backward, left,
+  right, up or down. An adapter maps it to a fixed-strength throttle command. `up` and `down` execute
+  as a coast, because the controller API has no up/down axis.
+- **Guided maneuvers:** the immediate-control layer is split in two. Jev picks a maneuver primitive (`APPROACH_LADY`,
 `GO_TO_WAYPOINT`, `BRAKE`, `EVADE_GUARD`, `HOLD_STANDOFF`, `COAST`). A deterministic executor then
 turns that primitive into thrust, using Clohessy-Wiltshire relative-motion guidance in the Lady's
-LVLH frame. Every configuration shares the same executor, so they differ only in *who decides* and
-*how long deciding takes*.
+LVLH frame. Guided configurations share the same executor, so they differ only in *who decides* and *how
+long deciding takes*.
+
+### Running Kev
+
+```bash
+git clone https://github.com/jaredpalmer/kev.git && cd kev && uv sync --extra serve
+uv run --extra serve python -m kev.serve --run jaredpalmer/kev-0.8b --port 8009
+```
+
+The server needs Hugging Face to download weights. It runs on any Apple Silicon Mac or a 4 GB GPU,
+and on CPU more slowly. Point this repo at it with `KEV_BASE_URL`, which defaults to
+`http://127.0.0.1:8009`.
+
+**First milestone** (one observation, then a Kev decision, then the executed command, then the next
+observation):
+
+```bash
+python -m hsc.milestone                            # Kev, raw actions; logs to results/milestone.jsonl
+python -m hsc.milestone --decider rule_discrete    # same loop with no model
+```
 
 ## Simulator: `lbg1_lite`
 
@@ -64,7 +90,12 @@ python -m hsc.experiment --configs fast_only,rule_hier,latency_sweep --seeds 5
 # needs ANTHROPIC_API_KEY
 python -m hsc.experiment --configs hier_rule_fast,flat_haiku,flat_opus --seeds 3
 
-# also needs TYPESAFE_API_KEY and network access to api.typesafe.ai
+# local Kev server
+python -m hsc.experiment --configs kev_discrete,kev --seeds 3
+# Kev plus ANTHROPIC_API_KEY for the upper layers
+python -m hsc.experiment --configs hier_kev,hier_kev_discrete --seeds 3
+
+# hosted Jev instead: TYPESAFE_API_KEY and network access to api.typesafe.ai
 python -m hsc.experiment --configs hier_jev,hier_no_opus,flat_jev --seeds 3
 ```
 
@@ -82,6 +113,10 @@ Results go to `results/<timestamp>/`: `episodes.jsonl` (per episode, with trajec
 | `hier_jev` | Opus | Haiku | Jev |
 | `hier_no_opus` | fixed brief | Haiku | Jev |
 | `flat_jev` | fixed brief | none | Jev |
+| `rule_discrete` | fixed brief | none | rules limited to the 7 raw actions |
+| `kev_discrete` | fixed brief | none | Kev, raw actions (first-version plan) |
+| `kev` | fixed brief | none | Kev, guided maneuvers |
+| `hier_kev` / `hier_kev_discrete` | Opus | Haiku | Kev, guided / raw actions |
 
 ## First result (no models)
 
@@ -101,6 +136,9 @@ changes:
   every run, at every latency. That includes the rule tactical layer, which still gets about 65 m
   closer to the Lady before being caught. So the no-model baselines can't win LG7, and that is the
   gap the Opus and Haiku layers have to close.
+- **Raw actions** (`results/baseline-rule-discrete/`): the rule controller limited to the 7 raw
+  actions at half throttle still catches the Lady against `lg0` and `lg1` on `i2`. Its closest Guard
+  approach is about half that of the guided version, and the LG7 proxy catches it every time.
 - **Rule tactical layer on `i2` + `lg0`:** it doubles the closest Guard distance (218 m vs 101 m) and
   uses half the fuel, at no latency cost to the fast loop.
 

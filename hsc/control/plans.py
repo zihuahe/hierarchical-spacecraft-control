@@ -15,6 +15,23 @@ PRIMITIVES: dict[str, str] = {
     "COAST": "No thrust; save fuel.",
 }
 
+# Raw action set from the project's first-version plan: the fast model returns one action ID and
+# the adapter supplies a fixed-strength thrust command. "up"/"down" are in the plan's list, but the
+# controller API has only forward/backward and right/left axes, so they execute as a coast.
+DISCRETE_ACTIONS: dict[str, str] = {
+    "coast": "No thrust; keep drifting on the current trajectory.",
+    "forward": "Thrust forward (along the direction of travel, toward +y along-track).",
+    "backward": "Thrust backward (against the direction of travel, toward -y along-track).",
+    "left": "Thrust left (radially outward, away from the planet, toward +x).",
+    "right": "Thrust right (radially inward, toward the planet, toward -x).",
+    "up": "Thrust up (out of the orbital plane). Not available in the two-axis API: executes as coast.",
+    "down": "Thrust down (out of the orbital plane). Not available in the two-axis API: executes as coast.",
+}
+DISCRETE_THROTTLE = {  # (forward, right) throttle for each action at full strength
+    "coast": (0.0, 0.0), "forward": (1.0, 0.0), "backward": (-1.0, 0.0),
+    "left": (0.0, -1.0), "right": (0.0, 1.0), "up": (0.0, 0.0), "down": (0.0, 0.0),
+}
+
 
 @dataclass
 class MissionBrief:

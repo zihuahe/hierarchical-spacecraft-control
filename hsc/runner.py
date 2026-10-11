@@ -148,6 +148,8 @@ def run_episode(cfg: ControllerConfig, init_cond: str, lady_guard_policy: str, s
             next_tactical = t + brief.tactical_period_s
 
         if t >= decider_free_at - 1e-9 and t - last_decision_launch >= cfg.min_decision_interval_s - 1e-9:
+            if hasattr(cfg.decider, "obs"):
+                cfg.decider.obs = obs
             out, err = call(logs["decider"], cfg.decider.decide, s, goal, brief)
             last_decision_launch = t
             if out is not None:

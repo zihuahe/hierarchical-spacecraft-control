@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from hsc.control.plans import PRIMITIVES, MissionBrief, TacticalGoal
+from hsc.control.plans import DISCRETE_ACTIONS, DISCRETE_THROTTLE, PRIMITIVES, MissionBrief, TacticalGoal
 from hsc.control.situation import Situation
 from hsc.sim import orbits as O
 
@@ -41,9 +41,10 @@ def _goto(r, target, vmax, v_final):
 
 class Executor:
     def __init__(self, control_period: float = 0.5, thrust_fwd: float = 8000.0, thrust_rev: float = 8000.0,
-                 thrust_lat: float = 4000.0):
+                 thrust_lat: float = 4000.0, discrete_strength: float = 0.5):
         assert 0.0 < control_period <= 10.0, "controller API allows 0-10 s per command"
         self.control_period = control_period
+        self.discrete_strength = discrete_strength
         self.thrust_fwd, self.thrust_rev, self.thrust_lat = thrust_fwd, thrust_rev, thrust_lat
 
     def desired_velocity(self, s: Situation, primitive: str, goal: TacticalGoal, brief: MissionBrief):
@@ -72,7 +73,15 @@ class Executor:
         raise ValueError(f"unknown primitive {primitive}")
 
     def act(self, s: Situation, obs, primitive: str, goal: TacticalGoal, brief: MissionBrief) -> dict:
-        """Return a two-axis body-frame throttle command (forward/backward, right/left) for one tick."""
+        """Return a two-axis body-frame throttle command (forward/backward, right/left) for one tick.
+
+        ``primitive`` is either a guided maneuver (PRIMITIVES) or a raw action ID (DISCRETE_ACTIONS),
+        which maps straight to a fixed-strength throttle with no guidance.
+        """
+        if primitive in DISCRETE_ACTIONS:
+            fwd, right = DISCRETE_THROTTLE[primitive]
+            k = self.discrete_strength
+            return {"burn_vec": [fwd * k, right * k, 0.0, self.control_period], "vec_type": 0, "ref_frame": 0}
         assert primitive in PRIMITIVES, primitive
         obs = np.asarray(obs, dtype=float)
         bandit_pos, bandit_vel, lady_pos, lady_vel = obs[3:6], obs[6:9], obs[9:12], obs[12:15]
