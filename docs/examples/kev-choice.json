@@ -1,0 +1,19 @@
+{
+  "model": "kev-latest",
+  "state": "Transport smoke test only. Choose COAST. This is not a flight observation and must not issue simulator commands.",
+  "questions": {
+    "action": {
+      "type": "choice",
+      "instructions": "Choose one action ID. This smoke test requests COAST.",
+      "criteria": {
+        "COAST": "No thrust",
+        "POS_X": "Positive inertial X throttle",
+        "NEG_X": "Negative inertial X throttle",
+        "POS_Y": "Positive inertial Y throttle",
+        "NEG_Y": "Negative inertial Y throttle",
+        "POS_Z": "Positive inertial Z throttle",
+        "NEG_Z": "Negative inertial Z throttle"
+      }
+    }
+  }
+}
