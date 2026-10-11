@@ -1,0 +1,718 @@
+{
+ "note": "SYNTHETIC check states (not simulator observations); validates Kev inference and latency only",
+ "kev_base_url": "http://127.0.0.1:8009",
+ "models": {
+  "models": [
+   {
+    "name": "kev-latest",
+    "description": "Kev pointer head on Qwen/Qwen3.5-0.8B-Base, serving jaredpalmer/kev-0.8b@v1.0 at temperature 2.35",
+    "release_date": "2026-10-01",
+    "run": "jaredpalmer/kev-0.8b@v1.0",
+    "base": "Qwen/Qwen3.5-0.8B-Base",
+    "lora": 16,
+    "device": "cpu",
+    "backend": "torch",
+    "dtype": "float32",
+    "temperature": 2.3510958125672174,
+    "max_state_tokens": 65536,
+    "truncate_states": false,
+    "cuda_graphs": null,
+    "prefix_cache": {
+     "size": 4,
+     "min_state_tokens": 0,
+     "max_tokens": 65536,
+     "hits": 0,
+     "misses": 0,
+     "cached_states": 0,
+     "oom_retries": 0
+    },
+    "batches": {
+     "count": 0,
+     "requests": 0,
+     "queued": 0
+    }
+   },
+   {
+    "name": "jev-latest",
+    "description": "Kev pointer head on Qwen/Qwen3.5-0.8B-Base, serving jaredpalmer/kev-0.8b@v1.0 at temperature 2.35",
+    "release_date": "2026-10-01",
+    "run": "jaredpalmer/kev-0.8b@v1.0",
+    "base": "Qwen/Qwen3.5-0.8B-Base",
+    "lora": 16,
+    "device": "cpu",
+    "backend": "torch",
+    "dtype": "float32",
+    "temperature": 2.3510958125672174,
+    "max_state_tokens": 65536,
+    "truncate_states": false,
+    "cuda_graphs": null,
+    "prefix_cache": {
+     "size": 4,
+     "min_state_tokens": 0,
+     "max_tokens": 65536,
+     "hits": 0,
+     "misses": 0,
+     "cached_states": 0,
+     "oom_retries": 0
+    },
+    "batches": {
+     "count": 0,
+     "requests": 0,
+     "queued": 0
+    }
+   }
+  ]
+ },
+ "python": "3.12.3",
+ "platform": "Linux-6.18.44-fc-v114-x86_64-with-glibc2.39",
+ "timed_requests": 20,
+ "decision_latency_s": {
+  "median": 1.9708999999999999,
+  "p95": 2.295,
+  "min": 1.7222,
+  "max": 2.4442
+ },
+ "choices": {
+  "COAST": 20,
+  "POS_X": 0,
+  "NEG_X": 0,
+  "POS_Y": 0,
+  "NEG_Y": 0,
+  "POS_Z": 0,
+  "NEG_Z": 0
+ },
+ "calls": [
+  {
+   "i": 0,
+   "warmup": true,
+   "choice": "COAST",
+   "confidence": 0.1574,
+   "probabilities": {
+    "COAST": 0.2777,
+    "POS_X": 0.1324,
+    "NEG_X": 0.0986,
+    "POS_Y": 0.1058,
+    "NEG_Y": 0.1208,
+    "POS_Z": 0.1171,
+    "NEG_Z": 0.1476
+   },
+   "burn_command": {
+    "burn_vec": [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ],
+    "ref_frame": 1,
+    "vec_type": 0
+   },
+   "model_latency_s": 1.9749,
+   "decision_latency_s": 1.975,
+   "request": {
+    "model": "kev-latest",
+    "state": "{\"mission\":\"Mission: move the Bandit within 5 m of the Lady before the Guard gets within 10 m of the Bandit, before mission time 240 s. Coordinates: right-handed celestial-body-centred inertial (CBCI), metres and metres per second.\",\"features\":{\"mission_time_s\":12.0,\"time_remaining_s\":228.0,\"bandit_mass_kg\":6800.0,\"bandit_fuel_raw\":120.0,\"fuel_used_raw\":0.0,\"mass_used_kg\":0.0,\"lady\":{\"rel_pos_m\":[0.0,2600.0,0.0],\"rel_vel_mps\":[0.0,0.0,0.0],\"distance_m\":2600.0,\"closing_speed_mps\":-0.0},\"guard\":{\"rel_pos_m\":[15.0,2000.0,0.0],\"rel_vel_mps\":[0.0,0.4,0.0],\"distance_m\":2000.06,\"closing_speed_mps\":-0.4},\"recent\":[]}}",
+    "questions": {
+     "action": {
+      "type": "choice",
+      "instructions": "Choose the next short burn to approach Lady while avoiding Guard. Use the stated inertial coordinate frame.",
+      "criteria": {
+       "COAST": "No thrust for this interval.",
+       "POS_X": "Positive inertial X throttle.",
+       "NEG_X": "Negative inertial X throttle.",
+       "POS_Y": "Positive inertial Y throttle.",
+       "NEG_Y": "Negative inertial Y throttle.",
+       "POS_Z": "Positive inertial Z throttle.",
+       "NEG_Z": "Negative inertial Z throttle."
+      }
+     }
+    }
+   }
+  },
+  {
+   "i": 1,
+   "warmup": true,
+   "choice": "COAST",
+   "confidence": 0.1561,
+   "probabilities": {
+    "COAST": 0.2767,
+    "POS_X": 0.1336,
+    "NEG_X": 0.1026,
+    "POS_Y": 0.0959,
+    "NEG_Y": 0.1328,
+    "POS_Z": 0.1127,
+    "NEG_Z": 0.1456
+   },
+   "burn_command": {
+    "burn_vec": [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ],
+    "ref_frame": 1,
+    "vec_type": 0
+   },
+   "model_latency_s": 2.0251,
+   "decision_latency_s": 2.0253
+  },
+  {
+   "i": 2,
+   "warmup": false,
+   "choice": "COAST",
+   "confidence": 0.1475,
+   "probabilities": {
+    "COAST": 0.2693,
+    "POS_X": 0.1328,
+    "NEG_X": 0.1045,
+    "POS_Y": 0.097,
+    "NEG_Y": 0.133,
+    "POS_Z": 0.1137,
+    "NEG_Z": 0.1497
+   },
+   "burn_command": {
+    "burn_vec": [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ],
+    "ref_frame": 1,
+    "vec_type": 0
+   },
+   "model_latency_s": 2.1331,
+   "decision_latency_s": 2.1332,
+   "request": {
+    "model": "kev-latest",
+    "state": "{\"mission\":\"Mission: move the Bandit within 5 m of the Lady before the Guard gets within 10 m of the Bandit, before mission time 240 s. Coordinates: right-handed celestial-body-centred inertial (CBCI), metres and metres per second.\",\"features\":{\"mission_time_s\":14.0,\"time_remaining_s\":226.0,\"bandit_mass_kg\":6799.0,\"bandit_fuel_raw\":119.8,\"fuel_used_raw\":0.2,\"mass_used_kg\":1.0,\"lady\":{\"rel_pos_m\":[0.0,2520.0,16.94],\"rel_vel_mps\":[0.0,-0.1,0.0],\"distance_m\":2520.06,\"closing_speed_mps\":0.1},\"guard\":{\"rel_pos_m\":[12.38,1950.0,9.32],\"rel_vel_mps\":[0.169,0.3,0.0],\"distance_m\":1950.06,\"closing_speed_mps\":-0.301},\"recent\":[]}}",
+    "questions": {
+     "action": {
+      "type": "choice",
+      "instructions": "Choose the next short burn to approach Lady while avoiding Guard. Use the stated inertial coordinate frame.",
+      "criteria": {
+       "COAST": "No thrust for this interval.",
+       "POS_X": "Positive inertial X throttle.",
+       "NEG_X": "Negative inertial X throttle.",
+       "POS_Y": "Positive inertial Y throttle.",
+       "NEG_Y": "Negative inertial Y throttle.",
+       "POS_Z": "Positive inertial Z throttle.",
+       "NEG_Z": "Negative inertial Z throttle."
+      }
+     }
+    }
+   }
+  },
+  {
+   "i": 3,
+   "warmup": false,
+   "choice": "COAST",
+   "confidence": 0.1438,
+   "probabilities": {
+    "COAST": 0.2661,
+    "POS_X": 0.1313,
+    "NEG_X": 0.103,
+    "POS_Y": 0.096,
+    "NEG_Y": 0.1417,
+    "POS_Z": 0.1102,
+    "NEG_Z": 0.1518
+   },
+   "burn_command": {
+    "burn_vec": [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ],
+    "ref_frame": 1,
+    "vec_type": 0
+   },
+   "model_latency_s": 2.2948,
+   "decision_latency_s": 2.295
+  },
+  {
+   "i": 4,
+   "warmup": false,
+   "choice": "COAST",
+   "confidence": 0.1443,
+   "probabilities": {
+    "COAST": 0.2665,
+    "POS_X": 0.1351,
+    "NEG_X": 0.1044,
+    "POS_Y": 0.0977,
+    "NEG_Y": 0.1322,
+    "POS_Z": 0.1159,
+    "NEG_Z": 0.1481
+   },
+   "burn_command": {
+    "burn_vec": [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ],
+    "ref_frame": 1,
+    "vec_type": 0
+   },
+   "model_latency_s": 1.9422,
+   "decision_latency_s": 1.9423
+  },
+  {
+   "i": 5,
+   "warmup": false,
+   "choice": "COAST",
+   "confidence": 0.1385,
+   "probabilities": {
+    "COAST": 0.2616,
+    "POS_X": 0.1341,
+    "NEG_X": 0.1071,
+    "POS_Y": 0.0978,
+    "NEG_Y": 0.1383,
+    "POS_Z": 0.113,
+    "NEG_Z": 0.1481
+   },
+   "burn_command": {
+    "burn_vec": [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ],
+    "ref_frame": 1,
+    "vec_type": 0
+   },
+   "model_latency_s": 1.92,
+   "decision_latency_s": 1.9202
+  },
+  {
+   "i": 6,
+   "warmup": false,
+   "choice": "COAST",
+   "confidence": 0.1469,
+   "probabilities": {
+    "COAST": 0.2688,
+    "POS_X": 0.1258,
+    "NEG_X": 0.1141,
+    "POS_Y": 0.0937,
+    "NEG_Y": 0.1309,
+    "POS_Z": 0.1146,
+    "NEG_Z": 0.1521
+   },
+   "burn_command": {
+    "burn_vec": [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ],
+    "ref_frame": 1,
+    "vec_type": 0
+   },
+   "model_latency_s": 1.9056,
+   "decision_latency_s": 1.9058
+  },
+  {
+   "i": 7,
+   "warmup": false,
+   "choice": "COAST",
+   "confidence": 0.1481,
+   "probabilities": {
+    "COAST": 0.2698,
+    "POS_X": 0.1296,
+    "NEG_X": 0.1101,
+    "POS_Y": 0.0936,
+    "NEG_Y": 0.1277,
+    "POS_Z": 0.1159,
+    "NEG_Z": 0.1532
+   },
+   "burn_command": {
+    "burn_vec": [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ],
+    "ref_frame": 1,
+    "vec_type": 0
+   },
+   "model_latency_s": 1.9429,
+   "decision_latency_s": 1.943
+  },
+  {
+   "i": 8,
+   "warmup": false,
+   "choice": "COAST",
+   "confidence": 0.1398,
+   "probabilities": {
+    "COAST": 0.2627,
+    "POS_X": 0.1284,
+    "NEG_X": 0.1115,
+    "POS_Y": 0.0972,
+    "NEG_Y": 0.1286,
+    "POS_Z": 0.1212,
+    "NEG_Z": 0.1504
+   },
+   "burn_command": {
+    "burn_vec": [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ],
+    "ref_frame": 1,
+    "vec_type": 0
+   },
+   "model_latency_s": 2.0936,
+   "decision_latency_s": 2.0937
+  },
+  {
+   "i": 9,
+   "warmup": false,
+   "choice": "COAST",
+   "confidence": 0.1481,
+   "probabilities": {
+    "COAST": 0.2698,
+    "POS_X": 0.1318,
+    "NEG_X": 0.1098,
+    "POS_Y": 0.097,
+    "NEG_Y": 0.1275,
+    "POS_Z": 0.1167,
+    "NEG_Z": 0.1474
+   },
+   "burn_command": {
+    "burn_vec": [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ],
+    "ref_frame": 1,
+    "vec_type": 0
+   },
+   "model_latency_s": 1.9581,
+   "decision_latency_s": 1.9582
+  },
+  {
+   "i": 10,
+   "warmup": false,
+   "choice": "COAST",
+   "confidence": 0.1643,
+   "probabilities": {
+    "COAST": 0.2837,
+    "POS_X": 0.1219,
+    "NEG_X": 0.1094,
+    "POS_Y": 0.098,
+    "NEG_Y": 0.1255,
+    "POS_Z": 0.1152,
+    "NEG_Z": 0.1464
+   },
+   "burn_command": {
+    "burn_vec": [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ],
+    "ref_frame": 1,
+    "vec_type": 0
+   },
+   "model_latency_s": 1.8452,
+   "decision_latency_s": 1.8454
+  },
+  {
+   "i": 11,
+   "warmup": false,
+   "choice": "COAST",
+   "confidence": 0.1494,
+   "probabilities": {
+    "COAST": 0.2709,
+    "POS_X": 0.1258,
+    "NEG_X": 0.1105,
+    "POS_Y": 0.091,
+    "NEG_Y": 0.1259,
+    "POS_Z": 0.1192,
+    "NEG_Z": 0.1568
+   },
+   "burn_command": {
+    "burn_vec": [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ],
+    "ref_frame": 1,
+    "vec_type": 0
+   },
+   "model_latency_s": 1.8672,
+   "decision_latency_s": 1.8673
+  },
+  {
+   "i": 12,
+   "warmup": false,
+   "choice": "COAST",
+   "confidence": 0.1509,
+   "probabilities": {
+    "COAST": 0.2722,
+    "POS_X": 0.1283,
+    "NEG_X": 0.1082,
+    "POS_Y": 0.0957,
+    "NEG_Y": 0.1255,
+    "POS_Z": 0.1183,
+    "NEG_Z": 0.1519
+   },
+   "burn_command": {
+    "burn_vec": [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ],
+    "ref_frame": 1,
+    "vec_type": 0
+   },
+   "model_latency_s": 1.7221,
+   "decision_latency_s": 1.7222
+  },
+  {
+   "i": 13,
+   "warmup": false,
+   "choice": "COAST",
+   "confidence": 0.1501,
+   "probabilities": {
+    "COAST": 0.2715,
+    "POS_X": 0.1296,
+    "NEG_X": 0.1093,
+    "POS_Y": 0.094,
+    "NEG_Y": 0.1243,
+    "POS_Z": 0.117,
+    "NEG_Z": 0.1543
+   },
+   "burn_command": {
+    "burn_vec": [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ],
+    "ref_frame": 1,
+    "vec_type": 0
+   },
+   "model_latency_s": 2.1421,
+   "decision_latency_s": 2.1423
+  },
+  {
+   "i": 14,
+   "warmup": false,
+   "choice": "COAST",
+   "confidence": 0.1482,
+   "probabilities": {
+    "COAST": 0.2699,
+    "POS_X": 0.128,
+    "NEG_X": 0.1087,
+    "POS_Y": 0.0948,
+    "NEG_Y": 0.1253,
+    "POS_Z": 0.1176,
+    "NEG_Z": 0.1558
+   },
+   "burn_command": {
+    "burn_vec": [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ],
+    "ref_frame": 1,
+    "vec_type": 0
+   },
+   "model_latency_s": 2.444,
+   "decision_latency_s": 2.4442
+  },
+  {
+   "i": 15,
+   "warmup": false,
+   "choice": "COAST",
+   "confidence": 0.1488,
+   "probabilities": {
+    "COAST": 0.2704,
+    "POS_X": 0.1269,
+    "NEG_X": 0.1094,
+    "POS_Y": 0.0953,
+    "NEG_Y": 0.1268,
+    "POS_Z": 0.1147,
+    "NEG_Z": 0.1565
+   },
+   "burn_command": {
+    "burn_vec": [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ],
+    "ref_frame": 1,
+    "vec_type": 0
+   },
+   "model_latency_s": 2.1124,
+   "decision_latency_s": 2.1126
+  },
+  {
+   "i": 16,
+   "warmup": false,
+   "choice": "COAST",
+   "confidence": 0.1563,
+   "probabilities": {
+    "COAST": 0.2768,
+    "POS_X": 0.1323,
+    "NEG_X": 0.1019,
+    "POS_Y": 0.0993,
+    "NEG_Y": 0.1238,
+    "POS_Z": 0.1157,
+    "NEG_Z": 0.1502
+   },
+   "burn_command": {
+    "burn_vec": [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ],
+    "ref_frame": 1,
+    "vec_type": 0
+   },
+   "model_latency_s": 2.1716,
+   "decision_latency_s": 2.1717
+  },
+  {
+   "i": 17,
+   "warmup": false,
+   "choice": "COAST",
+   "confidence": 0.1508,
+   "probabilities": {
+    "COAST": 0.2721,
+    "POS_X": 0.1309,
+    "NEG_X": 0.1013,
+    "POS_Y": 0.0964,
+    "NEG_Y": 0.1267,
+    "POS_Z": 0.1155,
+    "NEG_Z": 0.1572
+   },
+   "burn_command": {
+    "burn_vec": [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ],
+    "ref_frame": 1,
+    "vec_type": 0
+   },
+   "model_latency_s": 2.2417,
+   "decision_latency_s": 2.2418
+  },
+  {
+   "i": 18,
+   "warmup": false,
+   "choice": "COAST",
+   "confidence": 0.1497,
+   "probabilities": {
+    "COAST": 0.2711,
+    "POS_X": 0.1235,
+    "NEG_X": 0.1004,
+    "POS_Y": 0.1035,
+    "NEG_Y": 0.131,
+    "POS_Z": 0.1133,
+    "NEG_Z": 0.1572
+   },
+   "burn_command": {
+    "burn_vec": [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ],
+    "ref_frame": 1,
+    "vec_type": 0
+   },
+   "model_latency_s": 2.1368,
+   "decision_latency_s": 2.1369
+  },
+  {
+   "i": 19,
+   "warmup": false,
+   "choice": "COAST",
+   "confidence": 0.1485,
+   "probabilities": {
+    "COAST": 0.2702,
+    "POS_X": 0.1326,
+    "NEG_X": 0.098,
+    "POS_Y": 0.0967,
+    "NEG_Y": 0.126,
+    "POS_Z": 0.1172,
+    "NEG_Z": 0.1592
+   },
+   "burn_command": {
+    "burn_vec": [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ],
+    "ref_frame": 1,
+    "vec_type": 0
+   },
+   "model_latency_s": 1.9749,
+   "decision_latency_s": 1.9751
+  },
+  {
+   "i": 20,
+   "warmup": false,
+   "choice": "COAST",
+   "confidence": 0.1619,
+   "probabilities": {
+    "COAST": 0.2816,
+    "POS_X": 0.1257,
+    "NEG_X": 0.0999,
+    "POS_Y": 0.1003,
+    "NEG_Y": 0.1222,
+    "POS_Z": 0.1179,
+    "NEG_Z": 0.1525
+   },
+   "burn_command": {
+    "burn_vec": [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ],
+    "ref_frame": 1,
+    "vec_type": 0
+   },
+   "model_latency_s": 1.9584,
+   "decision_latency_s": 1.9585
+  },
+  {
+   "i": 21,
+   "warmup": false,
+   "choice": "COAST",
+   "confidence": 0.1524,
+   "probabilities": {
+    "COAST": 0.2735,
+    "POS_X": 0.1346,
+    "NEG_X": 0.1027,
+    "POS_Y": 0.104,
+    "NEG_Y": 0.1342,
+    "POS_Z": 0.1097,
+    "NEG_Z": 0.1413
+   },
+   "burn_command": {
+    "burn_vec": [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ],
+    "ref_frame": 1,
+    "vec_type": 0
+   },
+   "model_latency_s": 1.9665,
+   "decision_latency_s": 1.9667
+  }
+ ]
+}

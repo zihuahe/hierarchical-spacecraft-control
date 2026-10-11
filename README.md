@@ -16,7 +16,7 @@ weights on Hugging Face). It runs locally and serves TypeSafe's System One API, 
 talks to Kev or to hosted Jev. It answers a `choice` question over a fixed option list and doesn't
 write text. Two modes are wired up:
 
-- **Raw actions (the first-version plan):** Kev returns one action ID: coast, forward, backward, left,
+- **Raw actions (`lbg1_lite` experiments):** Kev returns one action ID: coast, forward, backward, left,
   right, up or down. An adapter maps it to a fixed-strength throttle command. `up` and `down` execute
   as a coast, because the controller API has no up/down axis.
 - **Guided maneuvers:** the immediate-control layer is split in two. Jev picks a maneuver primitive (`APPROACH_LADY`,
@@ -32,7 +32,56 @@ long deciding takes*.
 validates the burn, sends it, and reads the next observation. Burns never overlap: the next request
 is only sent after `env.step()` returns.
 
-**Action catalog** (inertial axes, right-handed CBCI, `ref_frame=1`, `vec_type=0` throttle, 1.0 s):
+### Status (2026-10-11)
+
+| Stage | Status | Evidence |
+|---|---|---|
+| A. Environment | **Blocked here.** `kspdg` 0.15.0 installs and `LBG1_LG7_I2_V1` builds; `reset()` needs KSP with kRPC, which this container doesn't have. | The loop exits with `env_unavailable: kRPC server not reachable at 127.0.0.1:50000` |
+| B. Local model | **Done.** A real Kev-0.8B server on CPU answered 22 of the loop's own Choice requests, all valid. | [`results/kev-local/kev_check.json`](results/kev-local/kev_check.json) |
+| C. First control loop | **Not run against KSP.** The loop ran with real Kev on the `lbg1_lite` test fixture only. | [`results/kev-fixture-check/`](results/kev-fixture-check/) (fixture, not the game) |
+| D. Episode | Not run against KSP. | — |
+| E. Hierarchy | Not started on the real loop. | — |
+
+The KSP game archive (`KSP_linux.zip`) and the Docker guide (`docs/docker_execution.md`) are not in
+`mit-ll/spacegym-kspdg` v0.15.0 or `ARCLab-MIT/kspdg` main. They came with the speaker materials.
+On a host with the game, start with `--steps 0` (stage A), then `--steps 1` (stage C).
+
+### What the installed KSPDG actually does
+
+Checked against `kspdg` 0.15.0 (`mit-ll/spacegym-kspdg` at `6251ca3`, whose code matches tag `v0.15.0`, installed with
+`[adv_bots,viz_tools]` on Python 3.12 and Linux x86_64):
+
+- **LG7 rules differ from the base defaults.** `LBG1_LG7_I2_V1` resolves to the obfuscated
+  `LBG1_LG7_I2_Env` (parent `LBG1_LG6_ParentEnv`). An instance reports `episode_timeout=240.0`,
+  `lady_capture_dist=5.0` and **`bandit_capture_dist=10.0`**, so the Guard intercepts at 10 m, not
+  5 m. `loadfile` is `lbg1_i2_init`. The loop reads these values from the env, records them in the
+  run header as `scenario_settings`, and builds Kev's mission text from them.
+- **Constructor:** `__init__(self, **kwargs)`. The loop always passes `episode_timeout`, then checks
+  the value the env reports.
+- **Without `juliacall`**, `kspdg.LBG1_LG7_I2_V1` is a placeholder that returns an error *string*.
+  The loop reports this as `env_unavailable`. LG7's Guard runs Julia (`iLQGames`, `FromFile`):
+  install Julia and run `kspdg-install-julia-deps`. `lbg1_base.py` imports `dearpygui`, so the
+  `viz_tools` extra is needed too. Obfuscated environments ship for Python 3.9, 3.10, 3.12 and 3.13,
+  not 3.11.
+- **API:** `reset()` returns `(obs, info)` and connects through `krpc.connect(name='kspdg_env')`, which
+  uses kRPC's defaults of `127.0.0.1:50000` (RPC) and `50001` (stream). `step(action)` returns
+  `(obs, reward, done, info)`. The burn runs as a **wall-clock** busy-wait of `burn_vec[3]` seconds and
+  stops early when the episode ends.
+- **Termination:** a background thread sets `env.is_lady_captured` and `env.is_bandit_captured`, or
+  times out when the Bandit's MET passes `episode_timeout`. These flags live on the env object, not in
+  `info`. The loop reads them and reports `capture`, `interception`, `capture_and_interception`,
+  `timeout` or `simulator_done`.
+- **Fuel:** `obs[2]` is `resources.amount('MonoPropellant')`, which is in KSP resource units even though
+  the docstring says kg. The loop keeps it as `bandit_fuel_raw` and `fuel_used_raw`, and also logs
+  `mass_used_kg` from `obs[1]`. KSPDG's `info["bandit_fuel_usage"]` is a mass difference in kg.
+- **Action:** a `Dict` of `burn_vec` (Box, −1..1 ×3 and 0..10 s), `ref_frame` (Discrete(3); 1 = right-handed
+  CBCI) and `vec_type` (Discrete(3); 0 = throttle). With `ref_frame=1` the env rotates the vector into the
+  body frame. The forward/reverse axes have 8 thrusters and the others 4, so the same inertial throttle
+  can give different accelerations depending on attitude.
+
+### Action catalog and request
+
+Inertial axes (right-handed CBCI), `ref_frame=1`, `vec_type=0` throttle, 1.0 s:
 
 | ID | burn_vec |
 |---|---|
@@ -41,76 +90,111 @@ is only sent after `env.step()` returns.
 | `POS_Y` / `NEG_Y` | `[0, ±0.2, 0, 1.0]` |
 | `POS_Z` / `NEG_Z` | `[0, 0, ±0.2, 1.0]` |
 
-Kev gets `POST /v1/systemone` with `model: "kev-latest"`, a JSON `state` (mission text plus derived
-features: relative position/velocity, distance and closing speed to the Lady and the Guard, time and
-fuel, recent history), and one `choice` question named `action` over the seven IDs. The loop reads
-`answers.action.choice`.
+Kev gets `POST /v1/systemone` with `model: "kev-latest"`, a JSON `state`, and one `choice` question
+named `action` over the seven IDs. The state holds the mission text from the effective rules and the
+derived features: relative position and velocity, distance and closing speed for both the Lady and the
+Guard, time remaining, fuel and mass used since the start, and recent history. The loop reads
+`answers.action.choice`. It logs `confidence` and `probabilities`, but these are not a calibrated
+chance of mission success.
 
-**Stops, with no fallback burn:** invalid observation (not 21 finite values), unknown or malformed
-answer, non-finite confidence or probabilities, request timeout, connection error, an observation
-older than `--max-observation-age-s` by the time the answer arrives, an invalid command, or a
-simulator exception. The reason goes into the trace and the run summary.
+**Stops, with no fallback burn:** an invalid observation (not 21 finite values); an unknown or malformed
+answer; non-finite confidence or probabilities; a request timeout (`model_timeout`, enforced on the
+whole request); an HTTP error such as Kev's 422 for oversized states (`model_http_error`); a connection
+error; an observation older than `--max-observation-age-s` when the answer arrives (`stale_decision`);
+an invalid command; or a simulator exception. The reason goes into the trace and the run summary.
 
-**Trace:** `results/traces/<run_id>.jsonl`. One `run_header` (effective config, Python, platform,
-repo commit, `kspdg` version, Kev `/v1/models`), one `decision` record per step (step, wall time,
-mission time, raw observation, features, model, context version and age, choice, confidence,
-probabilities, burn command, next observation, model and decision latency, observation age,
-terminal or error reason), and one `run_end`.
+**Trace:** `results/traces/<run_id>.jsonl`, with these records in order:
+
+- `run_header`: effective config, `scenario_settings` read from the env, mission text, Python, platform,
+  repo commit, `kspdg`, `krpc`, `gymnasium` and `juliacall` versions, and Kev's `/v1/models`.
+- `warmup`: one per untimed warm-up request. The state is a labelled placeholder and the answer is
+  discarded.
+- `observation`: the reset observation and info, plus the reset wall time.
+- `decision`, one per step: step, wall time, mission time, raw observation, features, model, context
+  version and age, choice, confidence, probabilities, burn command, next observation, `mission_dt_s`
+  and `step_wall_s` (the two clocks), model and decision latency, observation age, info, and the
+  terminal or error reason.
+- `run_end`.
 
 ### Exact commands
 
-1. Kev server (Python 3.11+, [uv](https://docs.astral.sh/uv/)). Weights come from Hugging Face:
-   `jaredpalmer/kev-0.8b@v1.0`, a LoRA adapter on `Qwen/Qwen3.5-0.8B-Base`. Don't use `pip install kev`.
+1. **Kev server.** Use Python 3.12 or 3.13 and [uv](https://docs.astral.sh/uv/). Don't use
+   `pip install kev`, which is an unrelated package. This was verified in this repo's cloud container
+   (Linux x86_64, 4 vCPU, no GPU). Kev source was at `2ecafc49`. `@v1.0` resolved to Hub snapshot
+   `bf75a6a8848ea6960ff2ed108d9ed44c2941174f`, a LoRA adapter on
+   `Qwen/Qwen3.5-0.8B-Base@dc7cdfe2ee4154fa7e30f5b51ca41bfa40174e68`.
 
    ```bash
    git clone https://github.com/jaredpalmer/kev.git && cd kev
    uv sync --extra serve
-   uv run --extra serve python -m kev.serve --run jaredpalmer/kev-0.8b@v1.0 --host 127.0.0.1 --port 8009
-   curl -s http://127.0.0.1:8009/v1/models    # check it is up; the run header records this response
+   HF_HUB_DISABLE_TELEMETRY=1 DO_NOT_TRACK=1 uv run --extra serve python -m kev.serve \
+       --run jaredpalmer/kev-0.8b@v1.0 --host 127.0.0.1 --port 8009
+   curl --fail http://127.0.0.1:8009/v1/models          # metadata: the server is up
    ```
 
-2. KSPDG: Kerbal Space Program with the KSPDG mod and kRPC running, and the `kspdg` Python package
-   (with `kspdg_envs` for LG3 and above) installed in this repo's environment. Follow the
-   competition's `docs/docker_execution.md` for the Docker setup. If the loop runs inside Docker
-   and Kev runs on the host, pass `--kev-base-url http://host.docker.internal:8009`.
+   On CPU the server runs in float32 and logs `serving jaredpalmer/kev-0.8b@v1.0 (...) on cpu via torch
+   (float32)`. The first start downloads about 7 GB of Python packages plus the weights.
 
-3. This repo:
+2. **Kev inference check** (stage B, no game needed). This sends the loop's exact request on synthetic
+   states and validates each answer with the loop's parser:
 
    ```bash
    pip install -r requirements.txt
-   python -m hsc.kspdg_loop --env kspdg --steps 1     # one-action connection test
-   python -m hsc.kspdg_loop --env kspdg --episode     # full episode, until KSPDG ends it
+   python -m hsc.kev_check --requests 20 --out results/kev-local/kev_check.json
    ```
 
-   Every setting is a flag, with these defaults: `--scenario LBG1_LG7_I2_V1 --episode-timeout-s 240
+3. **KSPDG** on the machine that runs the loop. Use Python 3.12 or 3.13, since 3.11 has no LG7 build:
+
+   ```bash
+   pip install "kspdg[full] @ git+https://github.com/mit-ll/spacegym-kspdg@v0.15.0"
+   kspdg-install-ksp-files                      # copies mission saves into your KSP install
+   curl -fsSL https://install.julialang.org | sh && kspdg-install-julia-deps   # LG7 Guard (Julia)
+   ```
+
+   Then start KSP with the KSPDG files, kRPC and PhysicsRangeExtender. Load a game, open the kRPC window,
+   enable **Auto-accept new clients**, and start the server. The env loads its own save, `lbg1_i2_init`,
+   on `reset()`. If the game runs in a container, publish ports 50000 and 50001 or pass
+   `--krpc-address`. If the loop runs in Docker and Kev on the host, pass
+   `--kev-base-url http://host.docker.internal:8009`. The first LG7 reset may compile Julia packages.
+
+4. **Loop**, from this repo:
+
+   ```bash
+   python -m hsc.kspdg_loop --env kspdg --steps 0      # stage A: one observation + effective rules, no Kev, no burn
+   python -m hsc.kspdg_loop --env kspdg --steps 1      # stage C: one real action, then the next observation
+   python -m hsc.kspdg_loop --env kspdg --episode      # stage D: until KSPDG ends the episode
+   ```
+
+   Every setting is a flag. Defaults: `--scenario LBG1_LG7_I2_V1 --episode-timeout-s 240
    --thrust-magnitude 0.2 --burn-duration-s 1.0 --kev-base-url http://127.0.0.1:8009
    --kev-model kev-latest --request-timeout-s 10 --max-observation-age-s 15 --history-len 5
-   --trace-dir results/traces`.
+   --warmup-requests 1 --krpc-address 127.0.0.1 --krpc-rpc-port 50000 --krpc-stream-port 50001
+   --trace-dir results/traces`. The timeout and age limits are not tuned. Measured Kev latency on a
+   4-vCPU CPU is about 2 s, so 10 s and 15 s leave room. Set them from your host's numbers.
 
-`--env fixture` runs the same loop on the `lbg1_lite` stand-in below. It is a **test fixture only**,
-not the real game, and its LG7 Guard is a proxy. `tests/test_kspdg_loop.py` covers parsing, feature
-math (including zero distance), all seven mappings and limits, bad and non-finite responses,
-timeout, connection loss, stale observations, both Gym step formats and cleanup, using a local stub
-Kev server.
+### Measured so far (Kev only, no game)
 
-### Running Kev
+`results/kev-local/kev_check.json`: 20 timed requests after 2 warm-up requests, CPU float32.
+Decision latency was **median 1.97 s, p95 2.30 s** (min 1.72, max 2.44), covering request building,
+HTTP, inference and validation. Every answer was a valid action ID, and every one was **`COAST`**, at
+about 0.27 probability against 0.14 for uniform. That held even with the Lady 2.5 km along +Y, where
+`POS_Y` got about 0.10. Pretrained Kev-0.8B wires up correctly, but this check shows no sign that it
+picks a direction from these features. A Kev-only run would probably coast, so compare it with the
+deterministic baseline before reading anything into the outcomes.
 
-```bash
-git clone https://github.com/jaredpalmer/kev.git && cd kev && uv sync --extra serve
-uv run --extra serve python -m kev.serve --run jaredpalmer/kev-0.8b@v1.0 --host 127.0.0.1 --port 8009
-```
+`results/kev-fixture-check/` holds the same loop with real Kev on the `lbg1_lite` **test fixture**,
+not KSP, to exercise the trace and stop logic end to end.
 
-The server needs Hugging Face to download weights. It runs on any Apple Silicon Mac or a 4 GB GPU,
-and on CPU more slowly. Point this repo at it with `KEV_BASE_URL`, which defaults to
-`http://127.0.0.1:8009`.
+`--env fixture` runs the loop on the `lbg1_lite` stand-in below. It is a **test fixture only**, not
+the real game, and its LG7 Guard is a proxy that captures at 5 m, not LG7's 10 m.
+`tests/test_kspdg_loop.py` covers parsing, the feature maths (including zero distance), all seven
+mappings and limits, bad and non-finite responses, HTTP errors, timeouts, connection loss, stale
+observations, effective-rule mission text, terminal reasons from env flags, the juliacall placeholder,
+kRPC routing and reachability, both step formats, observation-only mode and cleanup. The tests use a
+local stub Kev server and fake environments.
 
-**First milestone** (one observation, then a Kev decision, then the executed command, then the next
-observation):
-
-```bash
-python -m hsc.milestone                            # Kev, raw actions; logs to results/milestone.jsonl
-python -m hsc.milestone --decider rule_discrete    # same loop with no model
-```
+The older `python -m hsc.milestone` runs the same idea on `lbg1_lite` with the body-frame action set
+used by the experiments below. It is a stand-in, not the stage C milestone.
 
 ## Simulator: `lbg1_lite`
 
@@ -182,7 +266,7 @@ Results go to `results/<timestamp>/`: `episodes.jsonl` (per episode, with trajec
 | `hier_no_opus` | fixed brief | Haiku | Jev |
 | `flat_jev` | fixed brief | none | Jev |
 | `rule_discrete` | fixed brief | none | rules limited to the 7 raw actions |
-| `kev_discrete` | fixed brief | none | Kev, raw actions (first-version plan) |
+| `kev_discrete` | fixed brief | none | Kev, raw body-frame actions |
 | `kev` | fixed brief | none | Kev, guided maneuvers |
 | `hier_kev` / `hier_kev_discrete` | Opus | Haiku | Kev, guided / raw actions |
 
@@ -221,6 +305,7 @@ hsc/sim/        lbg1_lite environment and orbital helpers
 hsc/control/    situation summary, plans (brief/goal/primitives), executor
 hsc/layers/     strategist (Opus), tactician (Haiku), deciders (rules, Jev, flat LLM), API wrapper
 hsc/kspdg_loop.py  real KSPDG + local Kev loop (7 inertial actions, validation, JSONL trace)
+hsc/kev_check.py   stage B check: the loop's Choice request against a local Kev server
 hsc/runner.py   latency-aware episode loop
 hsc/experiment.py  named configs, CLI, summary table, plots
 tests/          sim, runner and API-shape tests (no network)

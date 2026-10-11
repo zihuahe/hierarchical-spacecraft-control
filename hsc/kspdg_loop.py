@@ -42,12 +42,10 @@ ACTION_CRITERIA = {
 }
 INSTRUCTIONS = ("Choose the next short burn to approach Lady while avoiding Guard. "
                 "Use the stated inertial coordinate frame.")
-MISSION_TEXT = ("Mission: move the Bandit within 5 m of the Lady before the Guard gets within 5 m of the "
-                "Bandit, within the episode time limit. Coordinates: right-handed celestial-body-centred "
-                "inertial (CBCI), metres and metres per second.")
 REF_FRAME_CBCI = 1
 VEC_TYPE_THROTTLE = 0
 MAX_DURATION_S = 10.0
+SIMULATOR_OUTCOMES = ("capture", "interception", "capture_and_interception", "timeout", "simulator_done")
 
 
 class LoopError(RuntimeError):
@@ -70,9 +68,15 @@ class LoopConfig:
     request_timeout_s: float = 10.0
     max_observation_age_s: float = 15.0
     history_len: int = 5
+    warmup_requests: int = 1
+    krpc_address: str = "127.0.0.1"
+    krpc_rpc_port: int = 50000
+    krpc_stream_port: int = 50001
     trace_dir: str = "results/traces"
 
     def validate(self):
+        if self.warmup_requests < 0:
+            raise LoopError("invalid_config", "warmup_requests must be >= 0")
         for name in ("episode_timeout_s", "burn_duration_s", "request_timeout_s", "max_observation_age_s"):
             v = getattr(self, name)
             if not (isinstance(v, (int, float)) and math.isfinite(v) and v > 0):
@@ -119,27 +123,46 @@ def relative(bandit_pos, bandit_vel, target_pos, target_vel) -> dict:
             "distance_m": round(d, 2), "closing_speed_mps": round(closing, 3)}
 
 
-def features(obs: list[float], history: list[dict], timeout_s: float) -> dict:
+def features(obs: list[float], history: list[dict], timeout_s: float, initial: list[float] | None = None) -> dict:
+    """Compact model state. ``initial`` is the episode's first observation (fuel and mass used since then).
+
+    obs[2] is KSP's MonoPropellant resource amount (``resources.amount``), in resource units, not kg, so it
+    stays ``_raw``. Mass is kg, so ``mass_used_kg`` is the unit-safe propellant figure.
+    """
     bp, bv = obs[3:6], obs[6:9]
-    f = {
+    initial = initial or obs
+    return {
         "mission_time_s": round(obs[0], 2),
         "time_remaining_s": round(max(0.0, timeout_s - obs[0]), 2),
         "bandit_mass_kg": round(obs[1], 2),
         "bandit_fuel_raw": round(obs[2], 3),
-        "fuel_consumed_raw": round(history[0]["bandit_fuel_raw"] - obs[2], 3) if history else 0.0,
+        "fuel_used_raw": round(initial[2] - obs[2], 3),
+        "mass_used_kg": round(initial[1] - obs[1], 3),
         "lady": relative(bp, bv, obs[9:12], obs[12:15]),
         "guard": relative(bp, bv, obs[15:18], obs[18:21]),
         "recent": [{"t_s": h["mission_time_s"], "lady_distance_m": h["lady"]["distance_m"],
                     "guard_distance_m": h["guard"]["distance_m"], "action": h.get("action")}
-                   for h in history[1:]],
+                   for h in history],
     }
-    return f
+
+
+def mission_text(settings: dict) -> str:
+    """Mission statement built from the loaded scenario's effective rules, not assumed defaults."""
+    def m(key):
+        v = settings.get(key)
+        return f"{v:g} m" if isinstance(v, (int, float)) else "the scenario's capture distance"
+
+    t = settings.get("episode_timeout_s")
+    limit = f"before mission time {t:g} s" if isinstance(t, (int, float)) else "within the episode time limit"
+    return (f"Mission: move the Bandit within {m('lady_capture_dist_m')} of the Lady before the Guard gets within "
+            f"{m('bandit_capture_dist_m')} of the Bandit, {limit}. Coordinates: right-handed celestial-body-centred "
+            "inertial (CBCI), metres and metres per second.")
 
 
 # ---------------------------------------------------------------- Kev request / response
 
-def build_request(feat: dict, cfg: LoopConfig, context: dict | None = None) -> dict:
-    state = {"mission": MISSION_TEXT, "features": feat}
+def build_request(feat: dict, cfg: LoopConfig, context: dict | None = None, mission: str | None = None) -> dict:
+    state = {"mission": mission or mission_text({}), "features": feat}
     if context:
         state["context"] = context
     return {
@@ -176,11 +199,17 @@ def kev_choose(request: dict, cfg: LoopConfig) -> tuple[dict, float]:
             raw = r.read()
     except TimeoutError as e:
         raise LoopError("model_timeout", repr(e))
+    except urllib.error.HTTPError as e:  # e.g. 422: state over the server's token limit
+        raise LoopError("model_http_error", f"HTTP {e.code}: {e.read()[:300]!r}")
     except urllib.error.URLError as e:
         if isinstance(e.reason, TimeoutError):
             raise LoopError("model_timeout", repr(e))
         raise LoopError("model_connection_error", repr(e))
+    except (ConnectionError, OSError) as e:  # reset mid-response
+        raise LoopError("model_connection_error", repr(e))
     latency = time.perf_counter() - t0
+    if latency > cfg.request_timeout_s:  # urllib's timeout is per socket operation, not per request
+        raise LoopError("model_timeout", f"request took {latency:.2f}s > {cfg.request_timeout_s}s")
     try:
         resp = json.loads(raw)
     except ValueError as e:
@@ -219,7 +248,7 @@ def validate_command(cmd: dict):
 # ---------------------------------------------------------------- environments
 
 def _step(env, cmd):
-    """Normalise KSPDG step results: (obs, reward, done, info) or (obs, reward, terminated, truncated, info)."""
+    """KSPDG 0.15 returns (obs, reward, done, info); a Gymnasium-style 5-tuple is also accepted."""
     try:
         out = env.step(cmd)
     except Exception as e:  # noqa: BLE001  (kRPC connection loss, game crash)
@@ -240,7 +269,7 @@ def _reset(env):
     return out if isinstance(out, tuple) and len(out) == 2 else (out, {})
 
 
-def make_env(kind: str, cfg: LoopConfig):
+def make_env(kind: str, cfg: LoopConfig, check_krpc: bool = True):
     if kind == "kspdg":
         try:
             import kspdg  # real game: needs KSP running with kRPC and the KSPDG mod
@@ -249,13 +278,21 @@ def make_env(kind: str, cfg: LoopConfig):
 
         env_cls = getattr(kspdg, cfg.scenario, None)
         if env_cls is None:
-            raise LoopError("env_unavailable", f"kspdg has no scenario {cfg.scenario} (obfuscated envs need kspdg_envs)")
+            raise LoopError("env_unavailable", f"kspdg {getattr(kspdg, '__version__', '?')} has no scenario {cfg.scenario}")
         try:
-            if "episode_timeout" in _init_params(env_cls):
-                return env_cls(episode_timeout=cfg.episode_timeout_s)
-            return env_cls()
-        except Exception as e:  # noqa: BLE001  (no kRPC server, game not running)
+            # LG3+ classes take **kwargs only, so pass the timeout explicitly; LadyBanditGuardGroup1Env accepts it
+            env = env_cls(episode_timeout=cfg.episode_timeout_s)
+        except Exception as e:  # noqa: BLE001
             raise LoopError("env_unavailable", repr(e))
+        if isinstance(env, str):  # kspdg's placeholder for LG3-LG7 when juliacall is missing returns a message
+            raise LoopError("env_unavailable", " ".join(env.split()))
+        eff = getattr(env, "episode_timeout", None)
+        if eff is not None and float(eff) != float(cfg.episode_timeout_s):
+            raise LoopError("invalid_config", f"env episode_timeout={eff} != configured {cfg.episode_timeout_s}")
+        _route_krpc(cfg)
+        if check_krpc:
+            _check_krpc(cfg)
+        return env
     if kind == "fixture":
         # TEST FIXTURE ONLY: pure-Python stand-in, not the real game. lg7 is a proxy Guard.
         from hsc.sim.lbg1_lite import LBG1LiteEnv
@@ -264,13 +301,42 @@ def make_env(kind: str, cfg: LoopConfig):
     raise LoopError("invalid_config", f"unknown env {kind!r}")
 
 
-def _init_params(cls):
-    import inspect
+def _route_krpc(cfg: LoopConfig):
+    """KSPDG calls ``krpc.connect(name=...)`` with the default 127.0.0.1:50000/50001. Point it at the configured
+    server instead (for example the KSP container's address) by binding the address into ``krpc.connect``."""
+    import functools
 
-    try:
-        return inspect.signature(cls.__init__).parameters
-    except (TypeError, ValueError):
-        return {}
+    import krpc
+
+    base = getattr(krpc.connect, "func", krpc.connect)
+    krpc.connect = functools.partial(base, address=cfg.krpc_address, rpc_port=cfg.krpc_rpc_port,
+                                     stream_port=cfg.krpc_stream_port)
+
+
+def _check_krpc(cfg: LoopConfig, timeout_s: float = 3.0):
+    import socket
+
+    for port in (cfg.krpc_rpc_port, cfg.krpc_stream_port):
+        try:
+            socket.create_connection((cfg.krpc_address, port), timeout=timeout_s).close()
+        except OSError as e:
+            raise LoopError("env_unavailable", f"kRPC server not reachable at {cfg.krpc_address}:{port} ({e!r}); "
+                                               "start KSP, load the game and start the kRPC server")
+
+
+def env_settings(env, cfg: LoopConfig) -> dict:
+    """Effective scenario rules read back from the environment object (None when it does not expose them)."""
+    def num(name):
+        v = getattr(env, name, None)
+        return float(v) if isinstance(v, (int, float)) else None
+
+    shared = num("capture_dist")  # the lbg1_lite fixture uses one distance for both
+    timeout = num("episode_timeout")
+    return {"env_class": type(env).__name__, "loadfile": getattr(env, "loadfile", None),
+            "episode_timeout_s": timeout if timeout is not None else cfg.episode_timeout_s,
+            "episode_timeout_source": "env" if timeout is not None else "config",
+            "lady_capture_dist_m": num("lady_capture_dist") or shared,
+            "bandit_capture_dist_m": num("bandit_capture_dist") or shared}
 
 
 # ---------------------------------------------------------------- loop
@@ -283,12 +349,13 @@ def _versions(env_kind: str, cfg: LoopConfig) -> dict:
     except Exception:  # noqa: BLE001
         v["repo_rev"] = None
     if env_kind == "kspdg":
-        try:
-            import importlib.metadata as md
+        import importlib.metadata as md
 
-            v["kspdg"] = md.version("kspdg")
-        except Exception:  # noqa: BLE001
-            v["kspdg"] = None
+        for pkg in ("kspdg", "krpc", "gymnasium", "juliacall"):
+            try:
+                v[pkg] = md.version(pkg)
+            except Exception:  # noqa: BLE001
+                v[pkg] = None
     try:
         with urllib.request.urlopen(f"{cfg.kev_base_url.rstrip('/')}/v1/models", timeout=5) as r:
             v["kev_models"] = json.loads(r.read())
@@ -306,19 +373,32 @@ def run(env, cfg: LoopConfig, max_steps: int | None, env_kind: str = "custom", c
     path = pathlib.Path(trace_path or pathlib.Path(cfg.trace_dir) / f"{run_id}.jsonl")
     path.parent.mkdir(parents=True, exist_ok=True)
     history: list[dict] = []
+    settings = env_settings(env, cfg)
+    mission = mission_text(settings)
     outcome = {"run_id": run_id, "trace": str(path), "steps": 0, "terminal_reason": None}
     with open(path, "w") as f:
         f.write(json.dumps({"record": "run_header", "run_id": run_id, "config": dataclasses.asdict(cfg),
+                            "scenario_settings": settings, "mission": mission,
                             "versions": _versions(env_kind, cfg)}) + "\n")
+        f.flush()
         try:
+            if max_steps != 0:
+                _warmup(choose, cfg, mission, f)
+            wall_before = time.time()
             obs_raw, info = _reset(env)
             obs = parse_observation(obs_raw)
             obs_wall = time.time()
+            initial = obs
+            f.write(json.dumps({"record": "observation", "run_id": run_id, "wall_time": obs_wall,
+                                "reset_wall_s": round(obs_wall - wall_before, 3), "mission_time_s": obs[0],
+                                "observation": obs, "features": features(obs, [], settings["episode_timeout_s"]),
+                                "info": _plain(info)}) + "\n")
+            f.flush()
             step = 0
             while max_steps is None or step < max_steps:
-                feat = features(obs, history, cfg.episode_timeout_s)
+                feat = features(obs, history, settings["episode_timeout_s"], initial)
                 ctx = context_provider(feat) if context_provider else None
-                request = build_request(feat, cfg, ctx)
+                request = build_request(feat, cfg, ctx, mission)
                 rec = {"record": "decision", "run_id": run_id, "step": step, "wall_time": time.time(),
                        "mission_time_s": obs[0], "observation": obs, "features": feat,
                        "model": cfg.kev_model, "context_version": None if not ctx else ctx.get("version"),
@@ -344,10 +424,11 @@ def run(env, cfg: LoopConfig, max_steps: int | None, env_kind: str = "custom", c
                     rec.update({"terminal_reason": e.reason, "error": e.detail})
                     f.write(json.dumps(rec, default=float) + "\n")
                     raise
-                rec.update({"next_observation": next_obs, "next_mission_time_s": next_obs[0], "done": bool(done),
-                            "info": {k: v for k, v in (info or {}).items() if isinstance(v, (int, float, bool, str))}})
+                rec.update({"next_observation": next_obs, "next_mission_time_s": next_obs[0],
+                            "mission_dt_s": round(next_obs[0] - obs[0], 3),  # vs step_wall_s: the two clocks
+                            "done": bool(done), "info": _plain(info)})
                 if done:
-                    rec["terminal_reason"] = _terminal_reason(info)
+                    rec["terminal_reason"] = _terminal_reason(env, info, next_obs, settings)
                 f.write(json.dumps(rec, default=float) + "\n")
                 f.flush()
                 history = (history + [{**feat, "action": parsed["choice"]}])[-cfg.history_len:]
@@ -359,7 +440,7 @@ def run(env, cfg: LoopConfig, max_steps: int | None, env_kind: str = "custom", c
                     outcome["info"] = rec["info"]
                     break
             else:
-                outcome["terminal_reason"] = "max_steps_reached"
+                outcome["terminal_reason"] = "observation_only" if max_steps == 0 else "max_steps_reached"
         except LoopError as e:
             outcome["terminal_reason"] = e.reason
             outcome["error"] = e.detail
@@ -374,12 +455,41 @@ def run(env, cfg: LoopConfig, max_steps: int | None, env_kind: str = "custom", c
     return outcome
 
 
-def _terminal_reason(info) -> str:
+def _warmup(choose, cfg: LoopConfig, mission: str, f):
+    """Untimed requests before the episode so the first real decision doesn't pay model load costs. The state is a
+    labelled placeholder (no observation exists yet) and nothing is executed."""
+    for i in range(cfg.warmup_requests):
+        feat = {"note": "WARMUP ONLY: placeholder state, not an observation; the answer is discarded",
+                "lady": relative([0, 0, 0], [0, 0, 0], [1000.0 + 100 * i, 0, 0], [0, 0, 0]),
+                "guard": relative([0, 0, 0], [0, 0, 0], [500.0, 50.0 * i, 0], [0, 0, 0])}
+        _, latency = choose(build_request(feat, cfg, None, mission))
+        f.write(json.dumps({"record": "warmup", "i": i, "model_latency_s": round(latency, 4)}) + "\n")
+
+
+def _plain(info) -> dict:
+    """JSON-safe scalars from an info dict (KSPDG returns numpy floats)."""
+    out = {}
+    for k, v in (info or {}).items():
+        if hasattr(v, "item") and not hasattr(v, "__len__"):
+            v = v.item()
+        if isinstance(v, (int, float, bool, str)):
+            out[k] = v
+    return out
+
+
+def _terminal_reason(env, info, obs, settings) -> str:
+    """KSPDG keeps the capture flags on the env object (set by its termination thread), not in ``info``."""
     info = info or {}
-    if info.get("is_lady_captured"):
+    lady = bool(getattr(env, "is_lady_captured", False) or info.get("is_lady_captured"))
+    bandit = bool(getattr(env, "is_bandit_captured", False) or info.get("is_bandit_captured"))
+    if lady and bandit:
+        return "capture_and_interception"
+    if lady:
         return "capture"
-    if info.get("is_bandit_captured"):
+    if bandit:
         return "interception"
+    if obs[0] >= settings["episode_timeout_s"]:
+        return "timeout"
     return "simulator_done"
 
 
@@ -388,7 +498,8 @@ def main(argv=None):
     ap.add_argument("--env", choices=["kspdg", "fixture"], default="kspdg",
                     help="kspdg = real game (default); fixture = pure-Python test stand-in")
     g = ap.add_mutually_exclusive_group()
-    g.add_argument("--steps", type=int, default=1, help="number of decisions (default 1: connection test)")
+    g.add_argument("--steps", type=int, default=1,
+                   help="number of decisions (default 1: connection test; 0: read one observation, no Kev, no burn)")
     g.add_argument("--episode", action="store_true", help="run until the simulator terminates the episode")
     for fld in dataclasses.fields(LoopConfig):
         ap.add_argument("--" + fld.name.replace("_", "-"), type=type(fld.default), default=fld.default)
@@ -396,14 +507,15 @@ def main(argv=None):
     cfg = LoopConfig(**{fld.name: getattr(args, fld.name) for fld in dataclasses.fields(LoopConfig)})
     try:
         cfg.validate()
+        if args.steps < 0:
+            raise LoopError("invalid_config", "--steps must be >= 0")
         env = make_env(args.env, cfg)
     except LoopError as e:
         print(json.dumps({"terminal_reason": e.reason, "error": e.detail}))
         raise SystemExit(2)
     out = run(env, cfg, None if args.episode else args.steps, env_kind=args.env)
     print(json.dumps(out, indent=2, default=float))
-    raise SystemExit(0 if out["terminal_reason"] in ("capture", "interception", "simulator_done",
-                                                     "max_steps_reached") else 1)
+    raise SystemExit(0 if out["terminal_reason"] in SIMULATOR_OUTCOMES + ("max_steps_reached", "observation_only") else 1)
 
 
 if __name__ == "__main__":
