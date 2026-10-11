@@ -225,8 +225,9 @@ python -m hsc.replay results/kev-fixture-check/20261011-202335-4f08c1.jsonl \
 
 ### Browser game
 
-`web/lady-bandit-guard.html` is a single-file game where you fly the Bandit yourself. Open it in a
-browser; it needs no server. It runs a JavaScript port of `lbg1_lite` (RK4, 0.1 s steps, 5 m capture),
+`web/lady-bandit-guard.html` is a single-file game where you fly the Bandit yourself. Play it at
+<https://zihuahe.github.io/hierarchical-spacecraft-control/> (GitHub Pages serves the `gh-pages`
+branch, whose `index.html` is a copy of this file), or open the file in a browser; it needs no server. It runs a JavaScript port of `lbg1_lite` (RK4, 0.1 s steps, 5 m capture),
 and `tests/test_game_physics.py` runs that port in node against the Python simulator for every start
 and Guard. You pick the Guard (LG0 passive, LG1 KSPDG heuristic, LG7 proxy pursuit) and the start (I2
 or I1), then steer with WASD or the arrows (Shift for 20% thrust), or the on-screen pad on a phone.
