@@ -12,7 +12,7 @@ Built at [Sundai Hack 144: Autonomous Spacecraft](https://www.sundai.club/events
 
 We control the **Bandit**, a simulated spacecraft trying to reach the **Lady** while avoiding interception by the **Guard**. Capture means crossing a proximity threshold, not docking.
 
-The environment is **Kerbal Space Program Differential Games (KSPDG)** inside Kerbal Space Program. The intended task lasts up to four minutes. Our original target is `LBG1_LG7_I2_V1`; its additional dependencies and the scenario actually running on the team's Linux setup still need confirmation. See [current status](docs/STATUS.md).
+The environment is **Kerbal Space Program Differential Games (KSPDG)** inside Kerbal Space Program. The intended task lasts up to four minutes. Our original target is `LBG1_LG7_I2_V1`; the effective scenario and rules must be confirmed on the running host. See [current status](docs/STATUS.md).
 
 ## The idea
 
@@ -41,7 +41,7 @@ Our next milestone is one real observation → Kev decision → executed command
 | [Setup](docs/SETUP.md) | Select a runtime path and reproduce a connection test |
 | [Control task](docs/CONTROL_TASK.md) | Understand observations, actions, timing, and the agent boundary |
 | [Experiments](docs/EXPERIMENTS.md) | Define a fair comparison and record evidence |
-| [Status](docs/STATUS.md) | See what is reported, inspected, and still pending |
+| [Status](docs/STATUS.md) | Check integration progress and open tasks |
 | [Contributing](CONTRIBUTING.md) | Make a small, reviewable contribution |
 
 ## Thanks

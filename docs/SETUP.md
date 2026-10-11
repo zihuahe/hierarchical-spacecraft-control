@@ -1,6 +1,6 @@
 # Setup
 
-**Source-checked instructions, not an independently reproduced installation.** Start with [status](STATUS.md) to choose a checkout and runtime. The reviewed `main` branch contains only a README title.
+The real game requires a Linux KSP installation with KSPDG files and kRPC. A fixture is available for development without the game. See [status](STATUS.md) for integration progress; commands below target a pinned implementation in PR #1.
 
 ## 1. Choose the execution path
 
@@ -11,11 +11,11 @@
 | Proposed PR #1 bridge | Direct `env.step()` loop with Kev | Correct checkout and real KSPDG dependencies |
 | Stand-in fixture | Development without the game | Label results as fixture-only |
 
-The original setup idea was to clone both speaker repositories, place the extracted game nearby, and install Python, Docker, and `uv`. Follow the checked-out runtime guide: neighboring folders alone do not configure mounts or networking. See the [speaker's Docker directory](https://github.com/ARCLab-MIT/kspdg-2026/tree/main/docker).
+Heiko's initial setup uses the speaker repositories, the extracted Linux game, Python, Docker, and `uv`. Configure game mounts and networking using the [speaker's Docker directory](https://github.com/ARCLab-MIT/kspdg-2026/tree/main/docker).
 
 ### Existing cluster job
 
-Adapted from Heiko's supplied `CONTROL_TASK.MD`. Replace both placeholders. The directory must contain the prepared `ksp.sif`, `run_agent.py`, and job setup; this command does not create them or submit a new job.
+Adapted from Heiko's supplied `CONTROL_TASK.MD`. Replace both placeholders. This command attaches to an existing allocated job. The directory must contain `ksp.sif` and `run_agent.py`.
 
 ```bash
 cd <YOUR_CLUSTER_DIR>
@@ -26,7 +26,7 @@ srun --jobid=<YOUR_JOB_ID> --overlap -n1 \
   python3 /w/run_agent.py 150
 ```
 
-`150` is this script's runner timeout in wall-clock seconds, not the mission's 240-second limit. Expected evidence: agent log lines containing mission time, target distance, and relative speed. Save those logs and one observation/action pair. A successful launch alone does not prove a completed mission.
+`150` is this script's runner timeout in wall-clock seconds, not the mission's 240-second limit. Expect agent logs containing mission time, target distance, and relative speed. Save the logs and one observation/action pair.
 
 Heiko reports `MISSION=lbg1_i2`. That identifies the initial-condition save, not the Guard policy. Confirm the actual environment class. Public LG0/LG1/LG2 classes have I2 variants; LG7 requires `juliacall`, Julia packages and a matching obfuscated environment build. PR #1 reports constructing an LG7 instance with KSPDG 0.15.0 on Python 3.12/Linux, without a real game connection. Its reported rules are Lady capture at 5 m and Bandit interception at 10 m; confirm these on your running host. Record an explicit scenario change if LG7 is unavailable.
 
@@ -52,11 +52,11 @@ curl -fsS --max-time 60 http://127.0.0.1:8009/v1/models
 
 Expect JSON describing the loaded model, device, and backend. Record it. The PyPI package named `kev` is unrelated; install this model from source.
 
-The controller must reach Kev from its own host/container/job. `127.0.0.1` refers to that process's machine or container. Confirm connectivity from the compute job; a working request on a laptop does not prove cluster connectivity. Use the actual endpoint in the adapter. The transcript's incomplete localhost address is not a configuration value.
+The controller must reach Kev from its own host/container/job. `127.0.0.1` refers to that process's machine or container. Confirm connectivity from the compute job; a working request on a laptop does not prove cluster connectivity. Use the actual endpoint in the adapter.
 
 ## 3. Inspect and try the proposed bridge
 
-This reproducible source snapshot is PR #1 at `70412e311d9ba7bb5045b1b061cf10282b480c1d`. It is not the current `main` implementation. Reuse an existing checkout rather than cloning over it.
+The following commands use PR #1 at `70412e311d9ba7bb5045b1b061cf10282b480c1d`. Use an existing checkout if available.
 
 ```bash
 cd <YOUR_WORKSPACE_DIR>
@@ -68,7 +68,7 @@ python3.12 -m venv .venv
 .venv/bin/python -m pytest -q tests/test_kspdg_loop.py
 ```
 
-Use Python 3.12 for this checkout. Expected result: tests pass; they use a stub model server and do not establish real game or real model integration. These commands have not been run as part of this documentation task.
+Expected result: the tests pass. They use a stub model server and fake environments; they check the adapter, not real-game performance.
 
 With Kev running at an endpoint reachable from this checkout:
 
@@ -116,4 +116,4 @@ Expected evidence: valid choices and a latency summary for synthetic states. Thi
 
 Record host architecture, Python/KSPDG/Kev revisions, environment class, mission/save, capture distances, mission timeout, runner timeout, burn duration, model endpoint, and exact commands. Confirm shutdown behavior before a model timeout test.
 
-Rendering is a separate workstream. Use logged trajectories if game display is unavailable. Do not treat a browser port, game process, and kRPC endpoint as interchangeable services.
+Game rendering, the kRPC connection, and the Kev API are separate services. Logged trajectories can support debugging when game display is unavailable.

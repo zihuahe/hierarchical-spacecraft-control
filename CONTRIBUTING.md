@@ -11,11 +11,11 @@ Start with [current status](docs/STATUS.md). Code in an open PR is proposed work
 
 Agree ownership before editing overlapping controller files. Keep a documentation change separate from changes to physics, controller behavior, or experiment settings when practical.
 
-## For coding agents
+## Implementation
 
-Read `README.md`, `docs/STATUS.md`, `docs/SETUP.md`, and `docs/CONTROL_TASK.md` before changing code. Inspect the actual checkout and any existing repository instructions.
+Read `README.md`, `docs/STATUS.md`, `docs/SETUP.md`, and `docs/CONTROL_TASK.md` before changing code. Follow the repository instructions for the branch you are working on.
 
-The smallest milestone is a real observation, a local Kev decision, a valid executed command, and the next observation. Reuse the working environment. Preserve the programmed controller as a baseline. Do not replace the simulator to avoid an integration problem.
+The smallest milestone is a real observation, a local Kev decision, a valid executed command, and the next observation. Reuse the working environment. Preserve the programmed controller as a baseline.
 
 Choose one execution harness: the existing `KSPDGBaseAgent`/runner path, or the proposed direct `env.step()` bridge. Their timing differs. Confirm the chosen path's stop behavior and log it. Model or simulator failure must produce a diagnostic and supported runner/environment shutdown; returning `None` in the standard runner preserves the previous action.
 

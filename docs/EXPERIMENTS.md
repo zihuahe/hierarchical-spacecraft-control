@@ -20,7 +20,7 @@ Compare a deterministic seven-action controller, Kev with fixed mission guidance
 
 Heiko's continuous-force PD controller is useful for environment bring-up. If it is compared against discrete Kev actions, disclose the different action spaces. Likewise, a guided maneuver executor and raw thrust selection are different experiments. Do not attribute their difference solely to model quality or hierarchy.
 
-Use the same predefined initial-condition/seed set for every controller where supported. Record the number of episodes and all failures. Choose trial count before running; this prototype has no justified universal trial count. Keep the scenario name distinct from any proxy Guard used in the stand-in simulation.
+Use the same predefined initial-condition/seed set for every controller where supported. Record the number of episodes and all failures. Choose the trial count before running. Keep the scenario name distinct from any proxy Guard used in the stand-in simulation.
 
 ## Measure
 
@@ -30,11 +30,9 @@ Use the same predefined initial-condition/seed set for every controller where su
 - Model-reported latency separately from client latency; cold start separately from warmed requests.
 - Observation age at application, action duration, planner latency/context age, and rejected or stale decisions.
 
-Keep mission time and monotonic wall time separate. Record what the spacecraft does while inference is pending: coast, repeat prior burn, or another explicitly implemented behavior. Model calls that take seconds cannot be described as a measured millisecond control loop.
+Keep mission time and monotonic wall time separate. Record what the spacecraft does while inference is pending: coast, repeat prior burn, or another explicitly implemented behavior. Report measured control rates alongside decision latency.
 
-Fixture latency experiments must state whether wall-clock inference delays advance simulated time. An older one-step Kev fixture trace advances mission time by about 1 second while the decision takes about 6.44 seconds; that trace is not a real-time spacecraft latency benchmark.
-
-The newer stored synthetic check reports 20 timed requests, median 1.97 s and p95 2.30 s, all choosing `COAST`. These are one host's artifact results, not independently reproduced measurements or evidence of useful control. Do not average them with the older fixture latency.
+Fixture experiments must state whether inference delays advance simulated time. Report the measured host and workload alongside latency; see [current results](STATUS.md).
 
 ## Trace contract
 
@@ -49,10 +47,6 @@ Identify synthetic latency and mocked responses explicitly. Publish sanitized lo
 
 ## Result summary
 
-Use one row per controller/environment combination:
-
-| Controller | Real game or fixture | Scenario / Guard | Trials | Captures / interceptions / timeouts / errors | Closest distances | Fuel change | Decision median / p95 | Evidence |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Pending | Pending | Pending | Not run here | Pending | Pending | Pending | Pending | Pending |
+Summarize each controller/environment combination with trial count, outcomes, closest distances, fuel change, median/p95 decision latency, and a link to its traces.
 
 For the final demo, show a trajectory or replay, the chosen actions and planner context, one outcome summary, and the limits of the comparison. Record unsuccessful runs as well as successes.
