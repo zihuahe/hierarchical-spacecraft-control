@@ -223,6 +223,18 @@ python -m hsc.replay results/kev-fixture-check/20261011-202335-4f08c1.jsonl \
 
 ![Final frame of the fixture replay](results/replay/kev_vs_rule_fixture.png)
 
+### Browser game
+
+`web/lady-bandit-guard.html` is a single-file game where you fly the Bandit yourself. Open it in a
+browser; it needs no server. It runs a JavaScript port of `lbg1_lite` (RK4, 0.1 s steps, 5 m capture),
+and `tests/test_game_physics.py` runs that port in node against the Python simulator for every start
+and Guard. You pick the Guard (LG0 passive, LG1 KSPDG heuristic, LG7 proxy pursuit) and the start (I2
+or I1), then steer with WASD or the arrows (Shift for 20% thrust), or the on-screen pad on a phone.
+The view is the Lady's LVLH frame, with a dotted coast prediction and its closest pass to the Lady.
+`B` hands control to the rule baseline above; a mission flown with it doesn't count toward the best
+score. The debrief gives the KSPDG score and, for LG7 from I2, compares you with the Kev and baseline
+fixture runs.
+
 `--env fixture` runs the loop on the `lbg1_lite` stand-in below. It is a **test fixture only**, not
 the real game, and its LG7 Guard is a proxy that captures at 5 m, not LG7's 10 m.
 `tests/test_kspdg_loop.py` covers parsing, the feature maths (including zero distance), all seven
@@ -345,6 +357,7 @@ hsc/layers/     strategist (Opus), tactician (Haiku), deciders (rules, Jev, flat
 hsc/kspdg_loop.py  real KSPDG + local Kev loop (7 inertial actions, validation, JSONL trace, rule baseline)
 hsc/kev_check.py   stage B check: the loop's Choice request against a local Kev server
 hsc/replay.py      replay video (MP4) of one or more loop traces, side by side
+web/lady-bandit-guard.html  browser game: fly the Bandit yourself on the lbg1_lite physics
 hsc/runner.py   latency-aware episode loop
 hsc/experiment.py  named configs, CLI, summary table, plots
 tests/          sim, runner and API-shape tests (no network)
