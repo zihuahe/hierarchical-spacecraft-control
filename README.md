@@ -25,11 +25,79 @@ turns that primitive into thrust, using Clohessy-Wiltshire relative-motion guida
 LVLH frame. Guided configurations share the same executor, so they differ only in *who decides* and *how
 long deciding takes*.
 
+## Real loop: KSPDG observation, Kev choice, burn, next observation
+
+`hsc/kspdg_loop.py` is the execution path for the real game. Its target is the KSPDG scenario
+`LBG1_LG7_I2_V1`. Each step reads one observation, asks the local Kev server for one action ID,
+validates the burn, sends it, and reads the next observation. Burns never overlap: the next request
+is only sent after `env.step()` returns.
+
+**Action catalog** (inertial axes, right-handed CBCI, `ref_frame=1`, `vec_type=0` throttle, 1.0 s):
+
+| ID | burn_vec |
+|---|---|
+| `COAST` | `[0, 0, 0, 1.0]` |
+| `POS_X` / `NEG_X` | `[±0.2, 0, 0, 1.0]` |
+| `POS_Y` / `NEG_Y` | `[0, ±0.2, 0, 1.0]` |
+| `POS_Z` / `NEG_Z` | `[0, 0, ±0.2, 1.0]` |
+
+Kev gets `POST /v1/systemone` with `model: "kev-latest"`, a JSON `state` (mission text plus derived
+features: relative position/velocity, distance and closing speed to the Lady and the Guard, time and
+fuel, recent history), and one `choice` question named `action` over the seven IDs. The loop reads
+`answers.action.choice`.
+
+**Stops, with no fallback burn:** invalid observation (not 21 finite values), unknown or malformed
+answer, non-finite confidence or probabilities, request timeout, connection error, an observation
+older than `--max-observation-age-s` by the time the answer arrives, an invalid command, or a
+simulator exception. The reason goes into the trace and the run summary.
+
+**Trace:** `results/traces/<run_id>.jsonl`. One `run_header` (effective config, Python, platform,
+repo commit, `kspdg` version, Kev `/v1/models`), one `decision` record per step (step, wall time,
+mission time, raw observation, features, model, context version and age, choice, confidence,
+probabilities, burn command, next observation, model and decision latency, observation age,
+terminal or error reason), and one `run_end`.
+
+### Exact commands
+
+1. Kev server (Python 3.11+, [uv](https://docs.astral.sh/uv/)). Weights come from Hugging Face:
+   `jaredpalmer/kev-0.8b@v1.0`, a LoRA adapter on `Qwen/Qwen3.5-0.8B-Base`. Don't use `pip install kev`.
+
+   ```bash
+   git clone https://github.com/jaredpalmer/kev.git && cd kev
+   uv sync --extra serve
+   uv run --extra serve python -m kev.serve --run jaredpalmer/kev-0.8b@v1.0 --host 127.0.0.1 --port 8009
+   curl -s http://127.0.0.1:8009/v1/models    # check it is up; the run header records this response
+   ```
+
+2. KSPDG: Kerbal Space Program with the KSPDG mod and kRPC running, and the `kspdg` Python package
+   (with `kspdg_envs` for LG3 and above) installed in this repo's environment. Follow the
+   competition's `docs/docker_execution.md` for the Docker setup. If the loop runs inside Docker
+   and Kev runs on the host, pass `--kev-base-url http://host.docker.internal:8009`.
+
+3. This repo:
+
+   ```bash
+   pip install -r requirements.txt
+   python -m hsc.kspdg_loop --env kspdg --steps 1     # one-action connection test
+   python -m hsc.kspdg_loop --env kspdg --episode     # full episode, until KSPDG ends it
+   ```
+
+   Every setting is a flag, with these defaults: `--scenario LBG1_LG7_I2_V1 --episode-timeout-s 240
+   --thrust-magnitude 0.2 --burn-duration-s 1.0 --kev-base-url http://127.0.0.1:8009
+   --kev-model kev-latest --request-timeout-s 10 --max-observation-age-s 15 --history-len 5
+   --trace-dir results/traces`.
+
+`--env fixture` runs the same loop on the `lbg1_lite` stand-in below. It is a **test fixture only**,
+not the real game, and its LG7 Guard is a proxy. `tests/test_kspdg_loop.py` covers parsing, feature
+math (including zero distance), all seven mappings and limits, bad and non-finite responses,
+timeout, connection loss, stale observations, both Gym step formats and cleanup, using a local stub
+Kev server.
+
 ### Running Kev
 
 ```bash
 git clone https://github.com/jaredpalmer/kev.git && cd kev && uv sync --extra serve
-uv run --extra serve python -m kev.serve --run jaredpalmer/kev-0.8b --port 8009
+uv run --extra serve python -m kev.serve --run jaredpalmer/kev-0.8b@v1.0 --host 127.0.0.1 --port 8009
 ```
 
 The server needs Hugging Face to download weights. It runs on any Apple Silicon Mac or a 4 GB GPU,
@@ -152,6 +220,7 @@ plan better than the rules do.
 hsc/sim/        lbg1_lite environment and orbital helpers
 hsc/control/    situation summary, plans (brief/goal/primitives), executor
 hsc/layers/     strategist (Opus), tactician (Haiku), deciders (rules, Jev, flat LLM), API wrapper
+hsc/kspdg_loop.py  real KSPDG + local Kev loop (7 inertial actions, validation, JSONL trace)
 hsc/runner.py   latency-aware episode loop
 hsc/experiment.py  named configs, CLI, summary table, plots
 tests/          sim, runner and API-shape tests (no network)
