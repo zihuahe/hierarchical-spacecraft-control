@@ -63,6 +63,7 @@ class LoopConfig:
     episode_timeout_s: float = 240.0
     thrust_magnitude: float = 0.2
     burn_duration_s: float = 1.0
+    decider: str = "kev"
     kev_base_url: str = "http://127.0.0.1:8009"
     kev_model: str = "kev-latest"
     request_timeout_s: float = 10.0
@@ -87,6 +88,8 @@ class LoopConfig:
             raise LoopError("invalid_config", f"burn_duration_s={self.burn_duration_s} exceeds {MAX_DURATION_S}")
         if self.history_len < 1:
             raise LoopError("invalid_config", "history_len must be >= 1")
+        if self.decider not in ("kev", "rule"):
+            raise LoopError("invalid_config", f"decider={self.decider!r} must be 'kev' or 'rule'")
 
 
 # ---------------------------------------------------------------- observation and features
@@ -215,6 +218,36 @@ def kev_choose(request: dict, cfg: LoopConfig) -> tuple[dict, float]:
     except ValueError as e:
         raise LoopError("invalid_response", f"not JSON ({e!r})")
     return parse_response(resp), latency
+
+
+RULE_MODEL = "rule_inertial (deterministic, no model)"
+
+
+def rule_action(feat: dict, max_speed_mps: float = 8.0, avoid_radius_m: float = 400.0,
+                deadband_mps: float = 0.3) -> str:
+    """Deterministic baseline over the same seven actions: steer the Bandit's velocity relative to the Lady
+    toward a desired one (head for the Lady, slowing near her; push away from the Guard inside
+    ``avoid_radius_m``) by firing the single inertial axis with the largest velocity error."""
+    lady, guard = feat["lady"], feat["guard"]
+    d_l = lady["distance_m"]
+    u_l = [x / d_l for x in lady["rel_pos_m"]] if d_l > 1e-6 else [0.0, 0.0, 0.0]
+    v_des = [u * min(max_speed_mps, 0.05 * d_l + 0.5) for u in u_l]
+    d_g = guard["distance_m"]
+    if 1e-6 < d_g < avoid_radius_m:
+        push = 6.0 * (1.0 - d_g / avoid_radius_m)
+        v_des = [v - push * g / d_g for v, g in zip(v_des, guard["rel_pos_m"])]
+    v_bandit = [-x for x in lady["rel_vel_mps"]]  # Bandit velocity relative to the Lady
+    err = [d - v for d, v in zip(v_des, v_bandit)]
+    axis = max(range(3), key=lambda i: abs(err[i]))
+    if abs(err[axis]) < deadband_mps:
+        return "COAST"
+    return ("POS_" if err[axis] > 0 else "NEG_") + "XYZ"[axis]
+
+
+def rule_choose(request: dict) -> tuple[dict, float]:
+    t0 = time.perf_counter()
+    choice = rule_action(json.loads(request["state"])["features"])
+    return {"choice": choice, "confidence": None, "probabilities": {}, "model": RULE_MODEL}, time.perf_counter() - t0
 
 
 # ---------------------------------------------------------------- action mapping and validation
@@ -356,6 +389,8 @@ def _versions(env_kind: str, cfg: LoopConfig) -> dict:
                 v[pkg] = md.version(pkg)
             except Exception:  # noqa: BLE001
                 v[pkg] = None
+    if cfg.decider != "kev":
+        return v
     try:
         with urllib.request.urlopen(f"{cfg.kev_base_url.rstrip('/')}/v1/models", timeout=5) as r:
             v["kev_models"] = json.loads(r.read())
@@ -366,9 +401,12 @@ def _versions(env_kind: str, cfg: LoopConfig) -> dict:
 
 def run(env, cfg: LoopConfig, max_steps: int | None, env_kind: str = "custom", choose=None,
         trace_path: str | None = None, context_provider=None) -> dict:
-    """Run the sequential loop. ``choose(request) -> (parsed, latency_s)`` defaults to the Kev server."""
+    """Run the sequential loop. ``choose(request) -> (parsed, latency_s)`` defaults to the Kev server, or to the
+    deterministic baseline when ``cfg.decider == "rule"``."""
     cfg.validate()
-    choose = choose or (lambda req: kev_choose(req, cfg))
+    if choose is None:
+        choose = rule_choose if cfg.decider == "rule" else (lambda req: kev_choose(req, cfg))
+    model_name = RULE_MODEL if cfg.decider == "rule" else cfg.kev_model
     run_id = time.strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:6]
     path = pathlib.Path(trace_path or pathlib.Path(cfg.trace_dir) / f"{run_id}.jsonl")
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -382,7 +420,7 @@ def run(env, cfg: LoopConfig, max_steps: int | None, env_kind: str = "custom", c
                             "versions": _versions(env_kind, cfg)}) + "\n")
         f.flush()
         try:
-            if max_steps != 0:
+            if max_steps != 0 and cfg.decider == "kev":
                 _warmup(choose, cfg, mission, f)
             wall_before = time.time()
             obs_raw, info = _reset(env)
@@ -401,7 +439,7 @@ def run(env, cfg: LoopConfig, max_steps: int | None, env_kind: str = "custom", c
                 request = build_request(feat, cfg, ctx, mission)
                 rec = {"record": "decision", "run_id": run_id, "step": step, "wall_time": time.time(),
                        "mission_time_s": obs[0], "observation": obs, "features": feat,
-                       "model": cfg.kev_model, "context_version": None if not ctx else ctx.get("version"),
+                       "model": model_name, "context_version": None if not ctx else ctx.get("version"),
                        "context_age_s": None if not ctx else ctx.get("age_s")}
                 try:
                     t0 = time.perf_counter()

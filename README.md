@@ -165,7 +165,7 @@ an invalid command; or a simulator exception. The reason goes into the trace and
    python -m hsc.kspdg_loop --env kspdg --episode      # stage D: until KSPDG ends the episode
    ```
 
-   Every setting is a flag. Defaults: `--scenario LBG1_LG7_I2_V1 --episode-timeout-s 240
+   Every setting is a flag. Defaults: `--scenario LBG1_LG7_I2_V1 --decider kev --episode-timeout-s 240
    --thrust-magnitude 0.2 --burn-duration-s 1.0 --kev-base-url http://127.0.0.1:8009
    --kev-model kev-latest --request-timeout-s 10 --max-observation-age-s 15 --history-len 5
    --warmup-requests 1 --krpc-address 127.0.0.1 --krpc-rpc-port 50000 --krpc-stream-port 50001
@@ -193,6 +193,35 @@ not KSP, to exercise the trace and stop logic end to end:
 - `20261011-202159-bb3c44.jsonl`: an earlier run that stopped at step 20 with `model_timeout`. One
   request took more than 10 s while other CPU-heavy work ran on the same 4 vCPUs. The loop sent no burn
   and closed the env.
+
+`--decider rule` swaps Kev for a **deterministic baseline** over the same seven actions and limits
+(`rule_action` in `hsc/kspdg_loop.py`). It steers the Bandit's velocity relative to the Lady toward
+"head for the Lady at up to 8 m/s, slowing near her, and push away from the Guard inside 400 m" by
+firing the single axis with the largest velocity error. It needs no model server.
+`results/rule-fixture-check/20261011-203444-40358c.jsonl` is that baseline on the same fixture: it
+closed to 1,588 m of the Lady using 44 kg of propellant, then the proxy Guard intercepted it at 170.2 s,
+the same time as the coasting Kev run. At 0.2 throttle the Bandit can't outrun a Guard that pursues at
+full thrust, so neither run says anything about the hierarchy yet.
+
+### Replay video
+
+`hsc/replay.py` renders one or more traces as an MP4 in the Lady's LVLH frame (along-track by radial),
+side by side on one mission clock. It shows trails, the burn direction, a close-up of the Bandit with
+the intercept ring, the model's action probabilities, the distances over time, and the outcome. Fixture
+traces are stamped "lbg1_lite TEST FIXTURE, not KSP". It works on real KSPDG traces unchanged. It needs
+ffmpeg.
+
+```bash
+python -m hsc.replay results/kev-fixture-check/20261011-202335-4f08c1.jsonl \
+    results/rule-fixture-check/20261011-203444-40358c.jsonl \
+    --labels "Kev-0.8B (local, pretrained)" "Deterministic baseline (no model)" \
+    --out results/replay/kev_vs_rule_fixture.mp4 --poster results/replay/kev_vs_rule_fixture.png
+```
+
+[`results/replay/kev_vs_rule_fixture.mp4`](results/replay/kev_vs_rule_fixture.mp4) is that video
+(24 s at 8x mission speed).
+
+![Final frame of the fixture replay](results/replay/kev_vs_rule_fixture.png)
 
 `--env fixture` runs the loop on the `lbg1_lite` stand-in below. It is a **test fixture only**, not
 the real game, and its LG7 Guard is a proxy that captures at 5 m, not LG7's 10 m.
@@ -313,8 +342,9 @@ plan better than the rules do.
 hsc/sim/        lbg1_lite environment and orbital helpers
 hsc/control/    situation summary, plans (brief/goal/primitives), executor
 hsc/layers/     strategist (Opus), tactician (Haiku), deciders (rules, Jev, flat LLM), API wrapper
-hsc/kspdg_loop.py  real KSPDG + local Kev loop (7 inertial actions, validation, JSONL trace)
+hsc/kspdg_loop.py  real KSPDG + local Kev loop (7 inertial actions, validation, JSONL trace, rule baseline)
 hsc/kev_check.py   stage B check: the loop's Choice request against a local Kev server
+hsc/replay.py      replay video (MP4) of one or more loop traces, side by side
 hsc/runner.py   latency-aware episode loop
 hsc/experiment.py  named configs, CLI, summary table, plots
 tests/          sim, runner and API-shape tests (no network)

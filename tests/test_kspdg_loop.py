@@ -412,3 +412,33 @@ def test_kev_check_against_stub(tmp_path, capsys):
     assert len(seen) == 4 and rep["timed_requests"] == 3 and rep["choices"]["NEG_Y"] == 3
     assert rep["calls"][1]["burn_command"] == {"burn_vec": [0.0, -0.2, 0.0, 1.0], "ref_frame": 1, "vec_type": 0}
     assert "within 10 m of the Bandit" in json.loads(seen[0][1]["state"])["mission"]
+
+
+def _feat(lady_pos, lady_vel=(0, 0, 0), guard_pos=(5000, 0, 0)):
+    return K.features([0, 4000, 400, 0, 0, 0, 0, 0, 0, *lady_pos, *lady_vel, *guard_pos, 0, 0, 0], [], 240.0)
+
+
+def test_rule_action_steers_toward_lady_and_away_from_guard():
+    assert K.rule_action(_feat((1000, 0, 0))) == "POS_X"
+    assert K.rule_action(_feat((0, -1000, 0))) == "NEG_Y"
+    # already closing at the desired speed (Lady's velocity relative to the Bandit is -8 m/s along X)
+    assert K.rule_action(_feat((1000, 0, 0), lady_vel=(-8, 0, 0))) == "COAST"
+    # Guard 50 m away along +Z: the push away from it dominates
+    assert K.rule_action(_feat((0, 0, 0.0), guard_pos=(0, 0, 50))) == "NEG_Z"
+
+
+def test_rule_decider_runs_without_kev(tmp_path):
+    """lbg1_lite TEST FIXTURE: decider=rule needs no model server, records no warm-up and names itself."""
+    cfg = K.LoopConfig(decider="rule", kev_base_url="http://127.0.0.1:9")
+    out = K.run(K.make_env("fixture", cfg), cfg, 5, env_kind="fixture", trace_path=tmp_path / "t.jsonl")
+    assert out["terminal_reason"] == "max_steps_reached" and out["steps"] == 5
+    assert not _records(tmp_path / "t.jsonl", "warmup")
+    decisions = _records(tmp_path / "t.jsonl", "decision")
+    assert {d["model"] for d in decisions} == {K.RULE_MODEL}
+    assert all(d["choice"] in K.ACTION_IDS for d in decisions)
+
+
+def test_unknown_decider_is_rejected():
+    with pytest.raises(K.LoopError) as e:
+        K.LoopConfig(decider="jev").validate()
+    assert e.value.reason == "invalid_config"
