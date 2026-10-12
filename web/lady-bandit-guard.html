@@ -1,0 +1,1253 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Lady Bandit Guard</title>
+<meta name="description" content="Fly the Bandit to the Lady before the Guard intercepts you, with the lbg1_lite orbital physics.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Barlow:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one full-screen orbital scope (Lady-centred LVLH, Kerbin below) with instrument readouts in the corners
+   and briefing / debrief cards over it. Single committed dark look: a night-side flight console. */
+:root {
+  color-scheme: dark;
+  --void: #060a13;          /* space behind the scope */
+  --panel: rgba(10, 16, 30, 0.86);
+  --rule: #1d2a44;
+  --ink: #dbe4f3;           /* primary text */
+  --ink-dim: #8592ab;       /* labels */
+  --amber: #f2b441;         /* instrument accent: the console's readout colour */
+  --lady: #ffd166;
+  --bandit: #4cc9f0;
+  --guard: #ef476f;
+  --good: #3ddc97;
+  --font-display: "Chakra Petch", "Rajdhani", "Segoe UI", system-ui, sans-serif;
+  --font-body: "Barlow", "Segoe UI", system-ui, sans-serif;
+  --font-data: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+html, body { height: 100%; }
+[hidden] { display: none !important; }
+body {
+  margin: 0;
+  background: var(--void);
+  color: var(--ink);
+  font-family: var(--font-body);
+  overflow: hidden;
+  -webkit-tap-highlight-color: transparent;
+}
+#stage { position: fixed; inset: 0; }
+#scope { display: block; width: 100%; height: 100%; touch-action: none; }
+
+/* ---------- readouts ---------- */
+.hud {
+  position: fixed;
+  z-index: 2;
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  font-family: var(--font-data);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  min-width: 0;
+}
+#hud-left { top: calc(env(safe-area-inset-top, 0px) + 12px); left: calc(env(safe-area-inset-left, 0px) + 12px); }
+#hud-right { top: calc(env(safe-area-inset-top, 0px) + 12px); right: calc(env(safe-area-inset-right, 0px) + 12px); text-align: right; }
+.hud .clock { font-family: var(--font-display); font-weight: 600; font-size: 20px; color: var(--amber); letter-spacing: 0.04em; }
+.hud .row { display: flex; gap: 10px; justify-content: space-between; white-space: nowrap; }
+.hud .k { color: var(--ink-dim); text-transform: uppercase; letter-spacing: 0.08em; font-size: 10.5px; align-self: center; }
+.hud .v-lady { color: var(--lady); }
+.hud .v-guard { color: var(--guard); }
+.hud .v-bandit { color: var(--bandit); }
+.hud .warn { color: var(--guard); }
+.fuel { width: 150px; height: 6px; background: #121c31; border-radius: 3px; overflow: hidden; justify-self: end; margin-block: 3px; }
+.fuel > i { display: block; height: 100%; width: 100%; background: var(--bandit); transform-origin: left; }
+.tag {
+  display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 10.5px; letter-spacing: 0.08em;
+  text-transform: uppercase; border: 1px solid var(--rule); color: var(--ink-dim);
+}
+.tag.on { color: var(--void); background: var(--amber); border-color: var(--amber); }
+#hint {
+  position: fixed; z-index: 2; left: 50%; transform: translateX(-50%);
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
+  font-size: 12.5px; color: var(--ink-dim); white-space: nowrap; pointer-events: none;
+}
+#hint kbd {
+  font-family: var(--font-data); font-size: 11px; color: var(--ink); padding: 0 5px; border: 1px solid var(--rule);
+  border-radius: 3px; background: #0d1528;
+}
+#toast {
+  position: fixed; z-index: 3; left: 50%; top: 22%; transform: translateX(-50%);
+  width: max-content; max-width: calc(100vw - 32px); text-align: center;
+  font-family: var(--font-display); font-weight: 600; font-size: 15px; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--amber); pointer-events: none; text-shadow: 0 0 12px rgba(242, 180, 65, 0.35);
+}
+
+/* ---------- touch controls ---------- */
+.pad { position: fixed; z-index: 2; display: none; }
+#dpad {
+  left: calc(env(safe-area-inset-left, 0px) + 14px); bottom: calc(env(safe-area-inset-bottom, 0px) + 14px);
+  grid-template-columns: repeat(3, 56px); grid-template-rows: repeat(3, 56px); gap: 4px;
+}
+#dpad button[data-dir="up"] { grid-column: 2; grid-row: 1; }
+#dpad button[data-dir="left"] { grid-column: 1; grid-row: 2; }
+#dpad button[data-dir="right"] { grid-column: 3; grid-row: 2; }
+#dpad button[data-dir="down"] { grid-column: 2; grid-row: 3; }
+#tools {
+  right: calc(env(safe-area-inset-right, 0px) + 14px); bottom: calc(env(safe-area-inset-bottom, 0px) + 14px);
+  grid-auto-flow: row; grid-template-columns: repeat(2, 64px); gap: 6px;
+}
+.pad button {
+  font-family: var(--font-display); font-weight: 600; font-size: 13px; letter-spacing: 0.06em; color: var(--ink);
+  background: rgba(13, 21, 40, 0.82); border: 1px solid var(--rule); border-radius: 10px; touch-action: none;
+  user-select: none; -webkit-user-select: none;
+}
+.pad button.held, .pad button[aria-pressed="true"] { background: var(--amber); color: var(--void); border-color: var(--amber); }
+#tools button { height: 44px; }
+@media (pointer: coarse) {
+  .pad { display: grid; }
+  #hint { display: none; }
+}
+
+/* ---------- briefing / debrief cards ---------- */
+.overlay {
+  position: fixed; inset: 0; z-index: 5; display: grid; place-items: center;
+  padding-left: calc(env(safe-area-inset-left, 0px) + 16px); padding-right: calc(env(safe-area-inset-right, 0px) + 16px);
+  padding-block: calc(env(safe-area-inset-top, 0px) + 16px) calc(env(safe-area-inset-bottom, 0px) + 16px);
+  background: radial-gradient(ellipse at 50% 120%, rgba(32, 90, 160, 0.28), transparent 60%), rgba(4, 7, 14, 0.72);
+  overflow-y: auto;
+}
+.card {
+  box-sizing: border-box; width: min(640px, 100%); background: var(--panel); border: 1px solid var(--rule); border-radius: 10px;
+  padding: 22px 24px; display: grid; gap: 16px; box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5); min-width: 0;
+}
+.eyebrow { font-family: var(--font-data); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--amber); }
+h1, h2 {
+  margin: 0; font-family: var(--font-display); font-weight: 700; letter-spacing: 0.02em; line-height: 1.05; text-wrap: balance;
+}
+h1 { font-size: clamp(30px, 7vw, 46px); }
+h2 { font-size: clamp(24px, 5.5vw, 34px); }
+.card p { margin: 0; line-height: 1.5; color: var(--ink); max-width: 62ch; }
+.card p.small { color: var(--ink-dim); font-size: 13px; }
+.cast { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.cast > div { border-top: 2px solid; padding-top: 8px; display: grid; gap: 2px; font-size: 13px; color: var(--ink-dim); }
+.cast b { font-family: var(--font-display); font-size: 15px; letter-spacing: 0.04em; color: var(--ink); }
+.cast .c-lady { border-color: var(--lady); }
+.cast .c-bandit { border-color: var(--bandit); }
+.cast .c-guard { border-color: var(--guard); }
+fieldset { margin: 0; padding: 0; border: 0; min-width: 0; }
+legend { padding: 0; margin-bottom: 8px; font-family: var(--font-data); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-dim); }
+.choices { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.choices.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.choice { position: relative; }
+.choice input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+.choice label {
+  display: flex; flex-direction: column; gap: 3px; box-sizing: border-box; height: 100%; padding: 10px 11px;
+  border: 1px solid var(--rule); border-radius: 7px; cursor: pointer;
+  font-size: 12.5px; color: var(--ink-dim); line-height: 1.35; background: #0b1222;
+}
+.choice label b { font-family: var(--font-display); font-size: 14.5px; letter-spacing: 0.03em; color: var(--ink); }
+.choice input:checked + label { border-color: var(--amber); box-shadow: inset 0 0 0 1px var(--amber); }
+.choice input:focus-visible + label { outline: 2px solid var(--bandit); outline-offset: 2px; }
+.keys { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 18px; font-size: 13px; color: var(--ink-dim); }
+.keys span { display: flex; gap: 8px; align-items: baseline; }
+.keys kbd { font-family: var(--font-data); font-size: 11.5px; color: var(--ink); min-width: 74px; }
+.actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.btn {
+  font-family: var(--font-display); font-weight: 600; font-size: 15px; letter-spacing: 0.08em; text-transform: uppercase;
+  padding: 11px 18px; border-radius: 7px; border: 1px solid var(--amber); background: var(--amber); color: var(--void); cursor: pointer;
+}
+.btn.ghost { background: transparent; color: var(--ink); border-color: var(--rule); }
+.btn:focus-visible { outline: 2px solid var(--bandit); outline-offset: 2px; }
+.stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.stat { display: grid; gap: 2px; min-width: 0; }
+.stat .k { font-family: var(--font-data); font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-dim); }
+.stat .v { font-family: var(--font-data); font-size: 18px; font-variant-numeric: tabular-nums; }
+.compare { display: grid; gap: 6px; font-size: 13px; color: var(--ink-dim); border-top: 1px solid var(--rule); padding-top: 12px; }
+.compare table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+.compare th, .compare td { text-align: left; padding: 3px 8px 3px 0; font-weight: 400; }
+.compare th { font-family: var(--font-data); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; }
+.compare td.you { color: var(--bandit); }
+.compare-wrap { overflow-x: auto; }
+#outcome-title.win { color: var(--good); }
+#outcome-title.lose { color: var(--guard); }
+#outcome-title.time { color: var(--amber); }
+@media (max-width: 520px) {
+  .cast, .choices, .stats { grid-template-columns: 1fr; }
+  .choices.two { grid-template-columns: 1fr; }
+  .keys { grid-template-columns: 1fr; }
+  .hud { font-size: 11px; padding: 7px 9px; }
+  #hud-right { top: calc(env(safe-area-inset-top, 0px) + 104px); }   /* stacked under the left panel */
+  #toast { top: calc(env(safe-area-inset-top, 0px) + 214px); }
+  .hud .clock { font-size: 16px; }
+  .fuel { width: 96px; }
+}
+@media (max-height: 500px) and (min-width: 521px) {
+  #toast { top: calc(env(safe-area-inset-top, 0px) + 128px); }
+}
+details.tips { font-size: 13px; color: var(--ink-dim); }
+details.tips summary { cursor: pointer; font-family: var(--font-data); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink); }
+details.tips ul { margin: 8px 0 0; padding-left: 18px; display: grid; gap: 5px; line-height: 1.45; max-width: 62ch; }
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
+</style>
+</head>
+<body>
+
+<div id="stage"><canvas id="scope" tabindex="-1" aria-label="Orbital scope: Lady at the centre, Bandit and Guard relative to her"></canvas></div>
+
+<div class="hud" id="hud-left" hidden>
+  <div class="clock" id="r-clock">T+ 0.0 s</div>
+  <div class="row"><span class="k">Lady</span><span class="v-lady" id="r-lady">–</span></div>
+  <div class="row"><span class="k">Guard</span><span class="v-guard" id="r-guard">–</span></div>
+  <div class="row"><span class="k">Coast pass</span><span id="r-cpa">–</span></div>
+</div>
+<div class="hud" id="hud-right" hidden>
+  <div class="row"><span class="k">Δv left</span><span class="v-bandit" id="r-dv">–</span></div>
+  <div class="fuel" aria-hidden="true"><i id="r-fuel"></i></div>
+  <div class="row"><span class="k">Propellant</span><span id="r-prop">–</span></div>
+  <div class="row"><span class="k">Guard</span><span id="r-policy">–</span></div>
+  <div class="row" style="justify-content:flex-end; gap:6px"><span class="tag" id="r-fine">Fine 20%</span><span class="tag" id="r-auto">Autopilot</span><span class="tag on" id="r-warp">2×</span></div>
+</div>
+<div id="hint" hidden><kbd>WASD</kbd>/<kbd>arrows</kbd> thrust · <kbd>Shift</kbd> fine · <kbd>T</kbd> time warp · <kbd>B</kbd> autopilot · <kbd>P</kbd> pause · <kbd>R</kbd> restart</div>
+<div id="toast" aria-live="polite"></div>
+
+<div class="pad" id="dpad" hidden>
+  <button type="button" data-dir="up" aria-label="Thrust radial out">▲</button>
+  <button type="button" data-dir="left" aria-label="Thrust retrograde">◀</button>
+  <button type="button" data-dir="right" aria-label="Thrust prograde">▶</button>
+  <button type="button" data-dir="down" aria-label="Thrust radial in">▼</button>
+</div>
+<div class="pad" id="tools" hidden>
+  <button type="button" id="b-fine" aria-pressed="false">FINE</button>
+  <button type="button" id="b-warp">2×</button>
+  <button type="button" id="b-auto" aria-pressed="false">AUTO</button>
+  <button type="button" id="b-pause">PAUSE</button>
+</div>
+
+<div class="overlay" id="briefing">
+  <form class="card" id="setup">
+    <div class="eyebrow">KSPDG scenario LBG1 · lbg1_lite physics</div>
+    <h1>Lady Bandit Guard</h1>
+    <p>You fly the Bandit. Get within <b>5 m</b> of the Lady before the Guard gets within 5 m of you, and before mission time runs out at <b>240 s</b>. Everyone is in low orbit around Kerbin, so thrust follows orbital mechanics: burn prograde and you speed up but also climb, so pair it with radial in to fly level at the Lady. The dotted line shows where you will coast, and the Coast pass readout says how close that gets you.</p>
+    <div class="cast">
+      <div class="c-lady"><b>Lady</b>The target. Coasts in a circular orbit 75 km up.</div>
+      <div class="c-bandit"><b>Bandit</b>You. 4 t, RCS only, 400 kg of propellant.</div>
+      <div class="c-guard"><b>Guard</b>Same ship as yours. Hunts you.</div>
+    </div>
+    <fieldset>
+      <legend>Guard</legend>
+      <div class="choices">
+        <div class="choice"><input type="radio" name="policy" id="p-lg0" value="lg0"><label for="p-lg0"><b>Passive · LG0</b>Never thrusts. Practice the approach.</label></div>
+        <div class="choice"><input type="radio" name="policy" id="p-lg1" value="lg1" checked><label for="p-lg1"><b>Heuristic · LG1</b>KSPDG's public pursuit bot: stop, burn at you, coast.</label></div>
+        <div class="choice"><input type="radio" name="policy" id="p-lg7" value="lg7"><label for="p-lg7"><b>Pursuit · LG7</b>Relentless proxy. The Guard the AI controllers faced.</label></div>
+      </div>
+    </fieldset>
+    <fieldset>
+      <legend>Start</legend>
+      <div class="choices two">
+        <div class="choice"><input type="radio" name="init" id="i-i2" value="i2" checked><label for="i-i2"><b>Same orbit · I2</b>Guard 600 m behind the Lady, you 2 km behind the Guard.</label></div>
+        <div class="choice"><input type="radio" name="init" id="i-i1" value="i1"><label for="i-i1"><b>From below · I1</b>Your ellipse peaks 500 m below the Lady at T+120 s. Guard 600 m ahead of her.</label></div>
+      </div>
+    </fieldset>
+    <div class="keys" id="keys">
+      <span><kbd>W / ↑</kbd>radial out (up)</span>
+      <span><kbd>S / ↓</kbd>radial in (down)</span>
+      <span><kbd>D / →</kbd>prograde (forward)</span>
+      <span><kbd>A / ←</kbd>retrograde (back)</span>
+      <span><kbd>Shift</kbd>fine thrust, 20%</span>
+      <span><kbd>T</kbd>time warp 1×, 2×, 4×</span>
+      <span><kbd>B</kbd>rule autopilot on/off</span>
+      <span><kbd>P / Esc</kbd>pause</span>
+    </div>
+    <details class="tips">
+      <summary>Flight tips</summary>
+      <ul>
+        <li>From I2, hold → and ↓ together for about 8 s, then coast. You reach the Lady around T+146 with about 45 kg used. Hold → longer to arrive sooner.</li>
+        <li>When Coast pass reads under 5 m, just coast and you will capture. Aim with one early burn, then trim late with short Shift taps.</li>
+        <li>Beat the Guard on the clock, not by dodging. LG7 catches a coasting Bandit at about T+170 from I2 and T+71 from I1.</li>
+        <li>From I1 against LG7, hold ← and ↑ together for 1.5 s, then ↑ alone until T+14.</li>
+      </ul>
+    </details>
+    <div class="actions">
+      <button class="btn" type="submit" id="start">Start mission</button>
+      <span class="small" id="best-line" style="color:var(--ink-dim);font-size:13px"></span>
+    </div>
+  </form>
+</div>
+
+<div class="overlay" id="paused" hidden>
+  <div class="card">
+    <div class="eyebrow">Mission paused</div>
+    <h2>Holding at T+<span id="pause-t">0.0</span> s</h2>
+    <div class="actions">
+      <button class="btn" type="button" id="resume">Resume</button>
+      <button class="btn ghost" type="button" id="pause-restart">Restart</button>
+      <button class="btn ghost" type="button" id="pause-setup">Change setup</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="debrief" hidden>
+  <div class="card">
+    <div class="eyebrow" id="outcome-eyebrow">Debrief</div>
+    <h2 id="outcome-title">Lady captured</h2>
+    <p id="outcome-text"></p>
+    <div class="stats">
+      <div class="stat"><span class="k">Mission time</span><span class="v" id="s-time">–</span></div>
+      <div class="stat"><span class="k">Closest to Lady</span><span class="v" id="s-lady">–</span></div>
+      <div class="stat"><span class="k">Closest Guard</span><span class="v" id="s-guard">–</span></div>
+      <div class="stat"><span class="k">Propellant used</span><span class="v" id="s-prop">–</span></div>
+      <div class="stat"><span class="k">KSPDG score</span><span class="v" id="s-score">–</span></div>
+      <div class="stat"><span class="k">Best score here</span><span class="v" id="s-best">–</span></div>
+    </div>
+    <p class="small">KSPDG's LBG1 score is closest Lady distance² + 10⁶ ÷ (closest Guard distance + 0.1). Lower is better.</p>
+    <div class="compare" id="compare" hidden>
+      <span>Same start against the LG7 Guard, from this project's recorded runs (7 inertial actions at 20% throttle):</span>
+      <div class="compare-wrap"><table>
+        <thead><tr><th>Pilot</th><th>Outcome</th><th>Closest to Lady</th></tr></thead>
+        <tbody>
+          <tr><td>Kev-0.8B (local model)</td><td>Intercepted at 170.2 s</td><td>2,600 m</td></tr>
+          <tr><td>Rule baseline</td><td>Intercepted at 170.2 s</td><td>1,588 m</td></tr>
+          <tr><td class="you" id="c-you-name">You</td><td class="you" id="c-you-out">–</td><td class="you" id="c-you-lady">–</td></tr>
+        </tbody>
+      </table></div>
+    </div>
+    <div class="actions">
+      <button class="btn" type="button" id="again">Fly again</button>
+      <button class="btn ghost" type="button" id="setup-again">Change setup</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* LBG-PHYSICS-BEGIN: a line-for-line port of hsc/sim/lbg1_lite.py and hsc/sim/orbits.py (planar Bandit control). */
+const LBG = (() => {
+  const MU = 3.5316e12;            // Kerbin [m^3/s^2]
+  const R_KERBIN = 600000;         // [m]
+  const G0 = 9.80665;
+  const LADY_R = R_KERBIN + 75000; // [m]
+  const TIMEOUT = 240;             // [s] kspdg lbg1_base
+  const CAPTURE = 5;               // [m] fixture distance for both Lady capture and interception
+  const SIM_DT = 0.1;              // [s]
+  const VP = { dry: 3600, prop: 400, isp: 240, fwd: 8000, rev: 8000, lat: 4000 };
+  const GP = { throttle: 1.0, minSpeed: 0.2, maxSpeed: 10.0, angThresh: 15 * Math.PI / 180,
+               loopTimeout: 30.0, reorient: 1.0, minBurn: 1.0 };
+
+  const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+  const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+  const mul = (a, k) => [a[0] * k, a[1] * k, a[2] * k];
+  const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  const norm = (a) => Math.sqrt(dot(a, a));
+  const unit = (a) => mul(a, 1 / norm(a));
+  const rows = (M, v) => [dot(M[0], v), dot(M[1], v), dot(M[2], v)];                          // M @ v
+  const cols = (M, v) => add(add(mul(M[0], v[0]), mul(M[1], v[1])), mul(M[2], v[2]));         // M.T @ v
+  const pos = (s) => s.slice(0, 3);
+  const vel = (s) => s.slice(3, 6);
+
+  function gravity(p) {
+    const r = norm(p);
+    return mul(p, -MU / (r * r * r));
+  }
+  function ntwBasis(p, v) {              // rows N, T, W in CBCI
+    const t = unit(v);
+    const w = unit(cross(p, v));
+    return [cross(t, w), t, w];
+  }
+  function bodyBasis(p, v) {             // rows forward, right, down of the prograde-held Bandit
+    const [n, t, w] = ntwBasis(p, v);
+    return [t, mul(n, -1), w];
+  }
+  function lvlhBasis(p, v) {             // rows radial, along-track, normal
+    const x = unit(p);
+    const z = unit(cross(p, v));
+    return [x, cross(z, x), z];
+  }
+  function relativeLvlh(ref, other) {    // position and velocity of `other` in `ref`'s rotating LVLH frame
+    const B = lvlhBasis(pos(ref), vel(ref));
+    const omega = mul(cross(pos(ref), vel(ref)), 1 / dot(pos(ref), pos(ref)));
+    const dr = sub(pos(other), pos(ref));
+    const dv = sub(sub(vel(other), vel(ref)), cross(omega, dr));
+    return [rows(B, dr), rows(B, dv)];
+  }
+  function deriv(s, a) {
+    return [s[3], s[4], s[5], ...add(gravity(pos(s)), a)];
+  }
+  function rk4(s, h, a) {
+    const axpy = (x, k, y) => x.map((xi, i) => xi + k * y[i]);
+    const k1 = deriv(s, a);
+    const k2 = deriv(axpy(s, 0.5 * h, k1), a);
+    const k3 = deriv(axpy(s, 0.5 * h, k2), a);
+    const k4 = deriv(axpy(s, h, k3), a);
+    return s.map((x, i) => x + h / 6 * (k1[i] + 2 * k2[i] + 2 * k3[i] + k4[i]));
+  }
+  function propagateCoast(state, dt, step = 1.0) {
+    const n = Math.max(1, Math.ceil(Math.abs(dt) / step));
+    const h = dt / n;
+    let s = state.slice();
+    for (let i = 0; i < n; i++) s = rk4(s, h, [0, 0, 0]);
+    return s;
+  }
+  const circularSpeed = (r) => Math.sqrt(MU / r);
+
+  function initialStates(init) {
+    const rl = LADY_R, vl = circularSpeed(rl);
+    const onCircle = (arc) => {
+      const th = arc / rl;
+      return [rl * Math.cos(th), rl * Math.sin(th), 0, -vl * Math.sin(th), vl * Math.cos(th), 0];
+    };
+    const lady = onCircle(0);
+    let bandit, guard;
+    if (init === "i2") {
+      guard = onCircle(-600);
+      bandit = onCircle(-2600);
+    } else {
+      const tConj = 120;
+      const ladyConj = propagateCoast(lady, tConj);
+      const rHat = unit(pos(ladyConj)), tHat = unit(vel(ladyConj));
+      const rApo = rl - 500, rPeri = rl - 8000, a = 0.5 * (rApo + rPeri);
+      const vApo = Math.sqrt(MU * (2 / rApo - 1 / a));
+      bandit = propagateCoast([...mul(rHat, rApo), ...mul(tHat, vApo)], -tConj);
+      guard = onCircle(600);
+    }
+    return [lady, bandit, guard];
+  }
+
+  function create({ init = "i2", policy = "lg1", captureDist = CAPTURE, timeout = TIMEOUT } = {}) {
+    const s = {
+      init, policy, captureDist, timeout, t: 0, states: initialStates(init),
+      bProp: VP.prop, gProp: VP.prop, gPhase: "reorient_zero", gPhaseStart: 0, gPointing: null,
+      ladyCaptured: false, banditCaptured: false, done: false, lastFb: [0, 0, 0], lastFg: [0, 0, 0],
+      m: { closestLB: Infinity, closestLBTime: 0, closestBG: Infinity, closestLG: Infinity, minLBDistSpeed: Infinity },
+    };
+    updateMetrics(s);
+    return s;
+  }
+
+  function throttleBody(s, vec, refFrame) {
+    const b = s.states[1];
+    let v;
+    if (refFrame === 0) v = vec.slice();
+    else if (refFrame === 1) v = rows(bodyBasis(pos(b), vel(b)), vec);
+    else throw new Error("unsupported ref_frame " + refFrame);
+    return v.map((x) => Math.max(-1, Math.min(1, x)));
+  }
+
+  function banditForce(s, thr, h) {
+    if (s.bProp <= 0) return [[0, 0, 0], 0];
+    const fBody = [thr[0] * (thr[0] >= 0 ? VP.fwd : VP.rev), thr[1] * VP.lat, thr[2] * VP.lat];
+    const mdot = (Math.abs(fBody[0]) + Math.abs(fBody[1]) + Math.abs(fBody[2])) / (VP.isp * G0);
+    const used = Math.min(s.bProp, mdot * h);
+    const scale = mdot > 0 ? used / (mdot * h) : 0;
+    const b = s.states[1];
+    return [cols(bodyBasis(pos(b), vel(b)), mul(fBody, scale)), used];
+  }
+
+  function angle(a, b) {
+    const na = norm(a), nb = norm(b);
+    if (na === 0 || nb === 0) return 0;
+    return Math.acos(Math.max(-1, Math.min(1, dot(a, b) / (na * nb))));
+  }
+
+  function guardForce(s, h) {
+    if (s.policy === "lg0" || s.gProp <= 0) return [[0, 0, 0], 0];
+    if (s.policy === "lg7") return guardForceLg7(s, h);
+    const [, bandit, guard] = s.states;
+    const rRel = sub(pos(bandit), pos(guard));
+    const vRel = sub(vel(bandit), vel(guard));
+    const spd = norm(vRel);
+    const ang = angle(mul(vRel, -1), rRel);
+    const dtPhase = s.t - s.gPhaseStart;
+    const sw = (phase) => { s.gPhase = phase; s.gPhaseStart = s.t; };
+    let dir = null;
+    if (s.gPhase === "reorient_zero") {
+      if (dtPhase >= GP.reorient) sw("zero");
+    } else if (s.gPhase === "zero") {
+      if (spd < GP.minSpeed || dtPhase > GP.loopTimeout) sw("reorient_direct");
+      else dir = mul(vRel, 1 / spd);
+    } else if (s.gPhase === "reorient_direct") {
+      if (dtPhase >= GP.reorient) sw("direct");
+    } else if (s.gPhase === "direct") {
+      if (spd > GP.maxSpeed || dtPhase > GP.loopTimeout || (ang > GP.angThresh && dtPhase > GP.minBurn)) sw("coast");
+      else dir = unit(rRel);
+    } else if (s.gPhase === "coast") {
+      if (ang > GP.angThresh) sw("reorient_zero");
+    }
+    if (dir === null) return [[0, 0, 0], 0];
+    const thrust = GP.throttle * VP.fwd;
+    const mdot = thrust / (VP.isp * G0);
+    const used = Math.min(s.gProp, mdot * h);
+    return [mul(dir, thrust * (used / (mdot * h))), used];
+  }
+
+  function guardForceLg7(s, h) {
+    const [, bandit, guard] = s.states;
+    const rRel = sub(pos(bandit), pos(guard));
+    const vRel = sub(vel(bandit), vel(guard));
+    const dist = norm(rRel);
+    const thrust = VP.fwd;
+    const aMax = thrust / (VP.dry + s.gProp);
+    const vClose = Math.min(12.0, Math.sqrt(2 * 0.7 * aMax * dist));
+    const vDesRel = mul(rRel, -vClose / Math.max(dist, 1e-6));
+    const aCmd = mul(sub(vRel, vDesRel), 0.5);
+    if (norm(aCmd) < 1e-3) return [[0, 0, 0], 0];
+    const target = unit(aCmd);
+    if (s.gPointing === null) s.gPointing = target;
+    const alpha = Math.min(1, h / GP.reorient);
+    s.gPointing = unit(add(s.gPointing, mul(sub(target, s.gPointing), alpha)));
+    let throttle = Math.min(1, norm(aCmd) / aMax);
+    if (dot(s.gPointing, target) < Math.cos(30 * Math.PI / 180)) throttle = 0;
+    const f = thrust * throttle;
+    const mdot = f / (VP.isp * G0);
+    if (mdot === 0) return [[0, 0, 0], 0];
+    const used = Math.min(s.gProp, mdot * h);
+    return [mul(s.gPointing, f * (used / (mdot * h))), used];
+  }
+
+  function substep(s, h, thr) {
+    const [fB, usedB] = banditForce(s, thr, h);
+    const [fG, usedG] = guardForce(s, h);
+    const mB = VP.dry + s.bProp - 0.5 * usedB;
+    const mG = VP.dry + s.gProp - 0.5 * usedG;
+    const aT = [[0, 0, 0], mul(fB, 1 / mB), mul(fG, 1 / mG)];
+    s.states = s.states.map((st, i) => rk4(st, h, aT[i]));
+    s.bProp -= usedB;
+    s.gProp -= usedG;
+    s.t += h;
+    s.lastFb = fB;
+    s.lastFg = fG;
+    updateMetrics(s);
+  }
+
+  function updateMetrics(s) {
+    const [lady, bandit, guard] = s.states;
+    const m = s.m;
+    const dLB = norm(sub(pos(bandit), pos(lady)));
+    const dBG = norm(sub(pos(bandit), pos(guard)));
+    const dLG = norm(sub(pos(lady), pos(guard)));
+    const sLB = norm(sub(vel(bandit), vel(lady)));
+    if (dLB < m.closestLB) { m.closestLB = dLB; m.closestLBTime = s.t; }
+    m.closestBG = Math.min(m.closestBG, dBG);
+    m.closestLG = Math.min(m.closestLG, dLG);
+    m.minLBDistSpeed = Math.min(m.minLBDistSpeed, dLB * sLB);
+    if (dLB < s.captureDist) s.ladyCaptured = true;
+    if (dBG < s.captureDist) s.banditCaptured = true;
+    if (s.ladyCaptured || s.banditCaptured || s.t >= s.timeout - 1e-9) s.done = true;
+  }
+
+  /** Hold one command for `duration` seconds, like LBG1LiteEnv.step (vec_type 0, throttle). */
+  function step(s, burnVec, refFrame = 0) {
+    if (s.done) throw new Error("episode is done");
+    const tEnd = Math.min(s.t + Math.max(0, burnVec[3]), s.timeout);
+    while (s.t < tEnd - 1e-9 && !s.done) {
+      const h = Math.min(SIM_DT, tEnd - s.t);
+      substep(s, h, throttleBody(s, burnVec.slice(0, 3), refFrame));
+    }
+    return observation(s);
+  }
+
+  function observation(s) {
+    const [lady, bandit, guard] = s.states;
+    return [s.t, VP.dry + s.bProp, s.bProp, ...bandit, ...lady, ...guard];
+  }
+
+  const weightedScore = (lb, bg) => lb * lb + 1e6 / (bg + 0.1);
+  const deltaV = (prop) => VP.isp * G0 * Math.log((VP.dry + prop) / VP.dry);
+
+  /** Deterministic baseline from hsc/kspdg_loop.py (rule_action) on the loop's features. */
+  function ruleAction(s, maxSpeed = 8.0, avoidRadius = 400.0, deadband = 0.3) {
+    const [lady, bandit, guard] = s.states;
+    const relL = sub(pos(lady), pos(bandit)), relLv = sub(vel(lady), vel(bandit));
+    const relG = sub(pos(guard), pos(bandit));
+    const dL = norm(relL), dG = norm(relG);
+    const uL = dL > 1e-6 ? mul(relL, 1 / dL) : [0, 0, 0];
+    let vDes = mul(uL, Math.min(maxSpeed, 0.05 * dL + 0.5));
+    if (dG > 1e-6 && dG < avoidRadius) vDes = sub(vDes, mul(relG, 6.0 * (1 - dG / avoidRadius) / dG));
+    const err = sub(vDes, mul(relLv, -1));
+    let axis = 0;
+    for (let i = 1; i < 3; i++) if (Math.abs(err[i]) > Math.abs(err[axis])) axis = i;
+    if (Math.abs(err[axis]) < deadband) return "COAST";
+    return (err[axis] > 0 ? "POS_" : "NEG_") + "XYZ"[axis];
+  }
+  function actionVector(id, magnitude) {
+    const v = { COAST: [0, 0, 0], POS_X: [1, 0, 0], NEG_X: [-1, 0, 0], POS_Y: [0, 1, 0],
+                NEG_Y: [0, -1, 0], POS_Z: [0, 0, 1], NEG_Z: [0, 0, -1] }[id];
+    return mul(v, magnitude);
+  }
+
+  return { MU, G0, VP, TIMEOUT, CAPTURE, SIM_DT, create, substep, step, throttleBody, observation, relativeLvlh,
+           lvlhBasis, propagateCoast, weightedScore, deltaV, ruleAction, actionVector, norm, sub, dot, rows };
+})();
+if (typeof module !== "undefined") module.exports = LBG;
+/* LBG-PHYSICS-END */
+</script>
+
+<script>
+(() => {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  const canvas = $("scope");
+  const ctx = canvas.getContext("2d");
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const css = getComputedStyle(document.documentElement);
+  const C = {
+    void: css.getPropertyValue("--void").trim() || "#060a13",
+    lady: css.getPropertyValue("--lady").trim() || "#ffd166",
+    bandit: css.getPropertyValue("--bandit").trim() || "#4cc9f0",
+    guard: css.getPropertyValue("--guard").trim() || "#ef476f",
+    amber: css.getPropertyValue("--amber").trim() || "#f2b441",
+    ink: css.getPropertyValue("--ink").trim() || "#dbe4f3",
+    dim: css.getPropertyValue("--ink-dim").trim() || "#8592ab",
+    rule: css.getPropertyValue("--rule").trim() || "#1d2a44",
+  };
+  const POLICY_LABEL = { lg0: "Passive LG0", lg1: "Heuristic LG1", lg7: "Pursuit LG7" };
+  const WARPS = [1, 2, 4];
+  const FINE = 0.2;                  // the loop's thrust magnitude
+  const AUTO_MAG = 0.2;              // autopilot uses the loop's settings: 7 inertial actions at 0.2 for 1 s
+  const TRAIL_EVERY = 0.5;           // [s] mission time between trail points
+
+  // ---------------------------------------------------------------- state
+  const store = {
+    get(k) { try { return JSON.parse(localStorage.getItem("lbg:" + k)); } catch (e) { return null; } },
+    set(k, v) { try { localStorage.setItem("lbg:" + k, JSON.stringify(v)); } catch (e) { /* storage unavailable */ } },
+  };
+  const hotData = (window.claude && window.claude.hot && window.claude.hot.data) || {};
+  const settings = Object.assign({ policy: "lg1", init: "i2", warp: 2 }, store.get("settings") || {}, hotData.settings || {});
+  let mode = "briefing";            // briefing | flying | paused | over
+  let sim = null;
+  let acc = 0;                       // unsimulated mission time [s]
+  let trails = null;
+  let nextTrail = 0;
+  let autopilot = false;
+  let autoUsed = false;              // the autopilot flew at some point this mission
+  let autoAction = "COAST";
+  let autoNext = 0;
+  let toastTimer = 0;
+  const keys = new Set();
+  const touchDirs = new Set();
+  let touchFine = false;
+  const view = { cx: 0, cy: 0, span: 3200, ready: false };
+  let stars = [];
+  let W = 0, H = 0, DPR = 1;
+
+  // ---------------------------------------------------------------- setup
+  function readSetup() {
+    const f = $("setup");
+    settings.policy = f.policy.value;
+    settings.init = f.init.value;
+    store.set("settings", { policy: settings.policy, init: settings.init, warp: settings.warp });
+  }
+  function applySetupToForm() {
+    const f = $("setup");
+    const p = f.querySelector(`input[name=policy][value=${settings.policy}]`);
+    const i = f.querySelector(`input[name=init][value=${settings.init}]`);
+    if (p) p.checked = true;
+    if (i) i.checked = true;
+    updateBestLine();
+  }
+  function bestKey() { return `best:${settings.policy}:${settings.init}`; }
+  function updateBestLine() {
+    const f = $("setup");
+    const b = store.get(`best:${f.policy.value}:${f.init.value}`);
+    $("best-line").textContent = b ? `Best KSPDG score with this setup: ${fmtScore(b.score)}${b.win ? " (captured)" : ""}` : "";
+  }
+
+  function newMission() {
+    sim = LBG.create({ init: settings.init, policy: settings.policy });
+    acc = 0;
+    trails = { bandit: [], guard: [] };
+    nextTrail = 0;
+    autoNext = 0;
+    autoAction = "COAST";
+    autopilot = false;
+    autoUsed = false;
+    $("b-auto").setAttribute("aria-pressed", "false");
+    view.ready = false;
+    recordTrail();
+  }
+
+  function startMission() {
+    readSetup();
+    newMission();
+    show("briefing", false); show("debrief", false); show("paused", false);
+    setHud(true);
+    mode = "flying";
+    toast(`${POLICY_LABEL[settings.policy]} · ${settings.init.toUpperCase()} · go`);
+    canvas.focus({ preventScroll: true });
+  }
+
+  function show(id, on) { $(id).hidden = !on; }
+  function setHud(on) {
+    for (const id of ["hud-left", "hud-right", "hint", "dpad", "tools"]) $(id).hidden = !on;
+  }
+  function toast(text, ms = 1800) {
+    const el = $("toast");
+    el.textContent = text;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { el.textContent = ""; }, ms);
+  }
+
+  // ---------------------------------------------------------------- input
+  const KEYMAP = { ArrowUp: "up", KeyW: "up", ArrowDown: "down", KeyS: "down", ArrowLeft: "left", KeyA: "left",
+                   ArrowRight: "right", KeyD: "right" };
+  window.addEventListener("keydown", (e) => {
+    if (e.target && e.target.tagName === "INPUT" && e.code === "Space") return;
+    const dir = KEYMAP[e.code];
+    if (dir) {
+      keys.add(dir);
+      if (mode === "flying") e.preventDefault();
+      return;
+    }
+    if (e.code === "ShiftLeft" || e.code === "ShiftRight") { keys.add("fine"); return; }
+    if (e.repeat) return;
+    if (mode === "flying") {
+      if (e.code === "KeyP" || e.code === "Escape") pause();
+      else if (e.code === "KeyT") cycleWarp();
+      else if (e.code === "Digit1") setWarp(1);
+      else if (e.code === "Digit2") setWarp(2);
+      else if (e.code === "Digit4") setWarp(4);
+      else if (e.code === "KeyB") toggleAuto();
+      else if (e.code === "KeyR") startMission();
+    } else if (mode === "paused") {
+      if (e.code === "KeyP" || e.code === "Escape") resume();
+      else if (e.code === "KeyR") startMission();
+    } else if (mode === "over") {
+      // Enter on a focused debrief button keeps that button's own action
+      if (e.code === "KeyR" || (e.code === "Enter" && !(e.target && e.target.tagName === "BUTTON"))) { e.preventDefault(); startMission(); }
+    }
+  });
+  window.addEventListener("keyup", (e) => {
+    const dir = KEYMAP[e.code];
+    if (dir) keys.delete(dir);
+    if (e.code === "ShiftLeft" || e.code === "ShiftRight") keys.delete("fine");
+  });
+  window.addEventListener("blur", () => { keys.clear(); touchDirs.clear(); clearHeld(); if (mode === "flying") pause(); });
+  document.addEventListener("visibilitychange", () => { if (document.hidden && mode === "flying") pause(); });
+
+  function clearHeld() { document.querySelectorAll("#dpad button").forEach((b) => b.classList.remove("held")); }
+  document.querySelectorAll("#dpad button").forEach((btn) => {
+    const dir = btn.dataset.dir;
+    const on = (e) => { e.preventDefault(); btn.setPointerCapture?.(e.pointerId); touchDirs.add(dir); btn.classList.add("held"); };
+    const off = (e) => { e.preventDefault(); touchDirs.delete(dir); btn.classList.remove("held"); };
+    btn.addEventListener("pointerdown", on);
+    btn.addEventListener("pointerup", off);
+    btn.addEventListener("pointercancel", off);
+    btn.addEventListener("lostpointercapture", off);
+    btn.addEventListener("contextmenu", (e) => e.preventDefault());
+  });
+  $("b-fine").addEventListener("click", () => { touchFine = !touchFine; $("b-fine").setAttribute("aria-pressed", String(touchFine)); });
+  $("b-warp").addEventListener("click", () => cycleWarp());
+  $("b-auto").addEventListener("click", () => toggleAuto());
+  $("b-pause").addEventListener("click", () => (mode === "flying" ? pause() : mode === "paused" ? resume() : null));
+
+  function cycleWarp() { setWarp(WARPS[(WARPS.indexOf(settings.warp) + 1) % WARPS.length]); }
+  function setWarp(w) {
+    settings.warp = w;
+    store.set("settings", { policy: settings.policy, init: settings.init, warp: w });
+    toast(`Time warp ${w}×`, 900);
+  }
+  function toggleAuto() {
+    autopilot = !autopilot;
+    if (autopilot) autoUsed = true;
+    autoNext = sim ? sim.t : 0;
+    $("b-auto").setAttribute("aria-pressed", String(autopilot));
+    toast(autopilot ? "Rule autopilot engaged · 20% inertial burns" : "Manual control", 1400);
+  }
+  function pause() {
+    if (mode !== "flying") return;
+    mode = "paused";
+    keys.clear(); touchDirs.clear(); clearHeld();
+    $("pause-t").textContent = sim.t.toFixed(1);
+    show("paused", true);
+    $("resume").focus();
+  }
+  function resume() {
+    if (mode !== "paused") return;
+    show("paused", false);
+    mode = "flying";
+    last = performance.now();
+    canvas.focus({ preventScroll: true });
+  }
+
+  $("setup").addEventListener("submit", (e) => { e.preventDefault(); startMission(); });
+  $("setup").addEventListener("change", updateBestLine);
+  $("resume").addEventListener("click", resume);
+  $("pause-restart").addEventListener("click", startMission);
+  $("pause-setup").addEventListener("click", toBriefing);
+  $("again").addEventListener("click", startMission);
+  $("setup-again").addEventListener("click", toBriefing);
+  function toBriefing() {
+    mode = "briefing";
+    show("paused", false); show("debrief", false);
+    setHud(false);
+    applySetupToForm();
+    show("briefing", true);
+    $("start").focus();
+  }
+
+  /** Current Bandit command: [forward, right, down] body-frame throttle (ref_frame 0), or an inertial action. */
+  function command() {
+    if (autopilot) return { vec: LBG.actionVector(autoAction, AUTO_MAG), ref: 1 };
+    const d = new Set([...keys, ...touchDirs]);
+    const mag = d.has("fine") || touchFine ? FINE : 1.0;
+    const fwd = (d.has("right") ? 1 : 0) - (d.has("left") ? 1 : 0);
+    const up = (d.has("up") ? 1 : 0) - (d.has("down") ? 1 : 0);
+    // body right points radially in, so radial out is negative right
+    return { vec: [fwd * mag, -up * mag, 0], ref: 0 };
+  }
+
+  // ---------------------------------------------------------------- simulation
+  function recordTrail() {
+    const lady = sim.states[0];
+    trails.bandit.push(LBG.relativeLvlh(lady, sim.states[1])[0]);
+    trails.guard.push(LBG.relativeLvlh(lady, sim.states[2])[0]);
+    nextTrail += TRAIL_EVERY;
+  }
+
+  function advance(realDt) {
+    acc += Math.min(realDt, 0.25) * settings.warp;
+    while (acc >= LBG.SIM_DT - 1e-12 && !sim.done) {
+      if (autopilot && sim.t >= autoNext - 1e-9) {     // one decision per second of mission time, like the loop
+        autoAction = LBG.ruleAction(sim);
+        autoNext = sim.t + 1.0;
+      }
+      const cmd = command();
+      LBG.substep(sim, LBG.SIM_DT, LBG.throttleBody(sim, cmd.vec, cmd.ref));
+      acc -= LBG.SIM_DT;
+      if (sim.t >= nextTrail - 1e-9) recordTrail();
+    }
+    if (sim.done) finish();
+  }
+
+  function finish() {
+    mode = "over";
+    keys.clear(); touchDirs.clear(); clearHeld();
+    recordTrail();
+    const m = sim.m;
+    const score = LBG.weightedScore(m.closestLB, m.closestBG);
+    const win = sim.ladyCaptured && !sim.banditCaptured;
+    const title = $("outcome-title");
+    let text, label;
+    if (sim.ladyCaptured && sim.banditCaptured) {
+      label = "Capture and interception"; title.className = "time";
+      text = "You reached the Lady in the same instant the Guard reached you. KSPDG counts both.";
+    } else if (win) {
+      label = "Lady captured"; title.className = "win";
+      text = `You closed to within ${sim.captureDist} m of the Lady at T+${sim.t.toFixed(1)} s with the Guard ${fmtDist(m.closestBG)} away at its closest.`;
+    } else if (sim.banditCaptured) {
+      label = "Intercepted by the Guard"; title.className = "lose";
+      text = `The Guard got within ${sim.captureDist} m of you at T+${sim.t.toFixed(1)} s. Your closest pass to the Lady was ${fmtDist(m.closestLB)}.`;
+    } else {
+      label = "Time up"; title.className = "time";
+      text = `Mission time ran out at ${sim.timeout} s. Your closest pass to the Lady was ${fmtDist(m.closestLB)}.`;
+    }
+    title.textContent = label;
+    $("outcome-eyebrow").textContent = `Debrief · ${POLICY_LABEL[sim.policy]} · ${sim.init.toUpperCase()}${autoUsed ? " · autopilot used" : ""}`;
+    $("outcome-text").textContent = text;
+    $("s-time").textContent = `${sim.t.toFixed(1)} s`;
+    $("s-lady").textContent = fmtDist(m.closestLB);
+    $("s-guard").textContent = fmtDist(m.closestBG);
+    $("s-prop").textContent = `${(LBG.VP.prop - sim.bProp).toFixed(1)} kg`;
+    $("s-score").textContent = fmtScore(score);
+    // runs the autopilot helped fly don't count as the player's best
+    const prev = store.get(bestKey());
+    const isBest = !autoUsed && (!prev || score < prev.score);
+    if (isBest) store.set(bestKey(), { score, win });
+    const best = isBest ? { score } : prev;
+    $("s-best").textContent = best ? fmtScore(best.score) + (isBest && prev ? " new" : "") : "–";
+    const lg7i2 = sim.policy === "lg7" && sim.init === "i2";
+    show("compare", lg7i2);
+    if (lg7i2) {
+      $("c-you-name").textContent = autoUsed ? "You, with autopilot" : "You";
+      $("c-you-out").textContent = label + ` at ${sim.t.toFixed(1)} s`;
+      $("c-you-lady").textContent = m.closestLB >= 100 ? `${Math.round(m.closestLB).toLocaleString("en-US")} m` : fmtDist(m.closestLB);
+    }
+    show("debrief", true);
+    $("debrief").scrollTop = 0;
+    $("again").focus({ preventScroll: true });
+  }
+
+  // ---------------------------------------------------------------- formatting
+  // units are picked from the rounded value; below 10 m distances are floored so 4.97 m never reads as 5.0
+  function fmtDist(d) {
+    if (!isFinite(d)) return "–";
+    if (Math.round(d) >= 1000) return `${(d / 1000).toFixed(2)} km`;
+    if (+d.toFixed(1) >= 100) return `${Math.round(d)} m`;
+    if (d >= 10) return `${d.toFixed(1)} m`;
+    return `${(Math.floor(d * 100) / 100).toFixed(2)} m`;
+  }
+  function fmtScore(x) {
+    if (!isFinite(x)) return "–";
+    if (+(x / 1e3).toFixed(1) >= 1000) return `${(x / 1e6).toFixed(2)} M`;
+    if (Math.round(x) >= 1000) return `${(x / 1e3).toFixed(1)} k`;
+    return x.toFixed(0);
+  }
+  const fmtSpeed = (v) => {
+    const r = Math.round(v * 10) / 10;
+    return `${r > 0 ? "+" : r < 0 ? "−" : ""}${Math.abs(r).toFixed(1)} m/s`;
+  };
+
+  function closing(sFrom, sTo) {
+    const rp = LBG.sub(sTo.slice(0, 3), sFrom.slice(0, 3));
+    const rv = LBG.sub(sTo.slice(3), sFrom.slice(3));
+    const d = LBG.norm(rp);
+    return [d, d > 1e-9 ? -LBG.dot(rp, rv) / d : 0];
+  }
+
+  // ---------------------------------------------------------------- prediction
+  /** Coast the Bandit and the Lady to the end of the mission and find the closest pass. */
+  function predict() {
+    let lady = sim.states[0].slice(), bandit = sim.states[1].slice();
+    const horizon = Math.max(0, Math.floor(sim.timeout - sim.t + 1e-9));
+    const sep = (b, l) => LBG.norm(LBG.sub(b.slice(0, 3), l.slice(0, 3)));
+    const pts = [LBG.relativeLvlh(lady, bandit)[0]];
+    const d0 = sep(bandit, lady);
+    let best = { d: d0, k: 0, l: lady, b: bandit };
+    for (let k = 1; k <= horizon; k++) {
+      lady = LBG.propagateCoast(lady, 1, 1);
+      bandit = LBG.propagateCoast(bandit, 1, 1);
+      pts.push(LBG.relativeLvlh(lady, bandit)[0]);
+      const d = sep(bandit, lady);
+      if (d < best.d) best = { d, k, l: lady, b: bandit };
+    }
+    // refine between the 1 s samples with straight-line relative motion, on the 0.1 s grid capture is checked on
+    const r = LBG.sub(best.b.slice(0, 3), best.l.slice(0, 3)), v = LBG.sub(best.b.slice(3), best.l.slice(3));
+    const vv = LBG.dot(v, v);
+    let ts = vv > 0 ? -LBG.dot(r, v) / vv : 0;
+    ts = Math.max(best.k > 0 ? -1 : 0, Math.min(best.k < pts.length - 1 ? 1 : 0, ts));
+    ts = Math.round(ts * 10) / 10;
+    const d = Math.min(best.d, Math.hypot(r[0] + v[0] * ts, r[1] + v[1] * ts, r[2] + v[2] * ts));
+    const a = pts[best.k], b = pts[best.k + Math.sign(ts)] || a, f = Math.abs(ts);
+    const at = [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f];
+    // only call it a pass when it beats the current range by more than round-off
+    const tol = Math.max(0.5, 1e-4 * d0);
+    const pass = d0 - d > tol;
+    const receding = LBG.norm(pts[pts.length - 1]) > d0 + tol;
+    return { pts, pass, receding, d, t: best.k + ts, at };
+  }
+
+  // ---------------------------------------------------------------- drawing
+  function resize() {
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    W = canvas.clientWidth; H = canvas.clientHeight;
+    canvas.width = Math.round(W * DPR); canvas.height = Math.round(H * DPR);
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    let seed = 1337;
+    const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    stars = Array.from({ length: Math.round((W * H) / 2600) }, () => ({ x: rnd(), y: rnd(), r: rnd() * 1.1 + 0.2, a: rnd() * 0.5 + 0.15, p: rnd() * 6.28 }));
+  }
+  window.addEventListener("resize", resize);
+  const watchDpr = () => matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`)
+    .addEventListener("change", () => { resize(); watchDpr(); }, { once: true });
+  watchDpr();
+
+  function niceStep(span) {
+    const raw = span / 6;
+    const p = Math.pow(10, Math.floor(Math.log10(raw)));
+    const m = raw / p;
+    return (m < 1.5 ? 1 : m < 3.5 ? 2 : m < 7.5 ? 5 : 10) * p;
+  }
+
+  function drawBackdrop(time) {
+    ctx.fillStyle = C.void;
+    ctx.fillRect(0, 0, W, H);
+    // Kerbin is 75 km "below" (radial in): its limb glow sits at the bottom of the scope
+    const g = ctx.createLinearGradient(0, H, 0, H * 0.55);
+    g.addColorStop(0, "rgba(40, 110, 190, 0.32)");
+    g.addColorStop(0.35, "rgba(22, 60, 120, 0.12)");
+    g.addColorStop(1, "rgba(6, 10, 19, 0)");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, H * 0.55, W, H * 0.45);
+    for (const s of stars) {
+      const tw = reduceMotion ? 1 : 0.75 + 0.25 * Math.sin(time * 0.0012 + s.p);
+      ctx.globalAlpha = s.a * tw;
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(s.x * W, s.y * H, s.r, s.r);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  /** Where the canvas overlays go, measured from the HUD panels and touch pads so nothing lands under them. */
+  function layout() {
+    const box = (id) => { const el = $(id); if (el.hidden) return null; const r = el.getBoundingClientRect(); return r.height > 0 ? r : null; };
+    const hl = box("hud-left"), hr = box("hud-right"), dp = box("dpad"), tl = box("tools");
+    const coarse = matchMedia("(pointer: coarse)").matches;
+    let size = Math.round(Math.min(210, W * 0.34, H * 0.3));
+    const top = (hr ? hr.bottom : 0) + 10;
+    const bottom = tl ? tl.top - 10 : H - 40;
+    size = Math.min(size, Math.floor(bottom - top));
+    const right = hr ? hr.right : W - 14;
+    const inset = size >= 70 ? { x: right - size, y: bottom - size, size } : null;
+    // on touch screens the pads, panels and inset cover part of the canvas, so frame the actors in the clear area
+    let vw = { x: 0, y: 0, w: W, h: H };
+    if (coarse && dp) {
+      const clear = W > H
+        ? { x: dp.right + 8, y: 0, w: (inset ? inset.x : tl ? tl.left : W) - 12 - (dp.right + 8), h: H }
+        : { x: 0, y: (hr ? hr.bottom : hl ? hl.bottom : 0) + 8, w: W, h: Math.min(dp.top, inset ? inset.y : H) - 8 - ((hr ? hr.bottom : hl ? hl.bottom : 0) + 8) };
+      if (clear.w >= 160 && clear.h >= 160) vw = clear;
+    }
+    const barX = hl ? hl.left + 4 : 16;
+    const barY = dp ? dp.top - 16 : H - 40;
+    const compass = barY - 60 > (hl ? hl.bottom : 0) + 4 && (!dp || barY - 60 > 0);
+    return { inset, vw, barX, barY, compass };
+  }
+
+  function fitView(pts, dt, vw) {
+    if (!(vw.w > 0 && vw.h > 0)) return;
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const [x, y] of pts) { minX = Math.min(minX, x); maxX = Math.max(maxX, x); minY = Math.min(minY, y); maxY = Math.max(maxY, y); }
+    const aspect = vw.w / vw.h;
+    const spanY = Math.max(maxY - minY, (maxX - minX) / aspect) * 1.45 + 40;
+    const target = { cx: (minX + maxX) / 2, cy: (minY + maxY) / 2, span: Math.max(spanY, 90) };
+    if (!view.ready || reduceMotion || !Number.isFinite(view.span)) { Object.assign(view, target); view.ready = true; return; }
+    const k = 1 - Math.exp(-dt * 3);
+    view.cx += (target.cx - view.cx) * k;
+    view.cy += (target.cy - view.cy) * k;
+    view.span += (target.span - view.span) * k;
+  }
+
+  function drawScene(time, dt) {
+    const lady = sim.states[0];
+    const [bRel] = LBG.relativeLvlh(lady, sim.states[1]);
+    const [gRel] = LBG.relativeLvlh(lady, sim.states[2]);
+    // screen: x = along-track, y = radial out (up)
+    const B = [bRel[1], bRel[0]], G = [gRel[1], gRel[0]];
+    const lay = layout();
+    const vw = lay.vw, ox = vw.x + vw.w / 2, oy = vw.y + vw.h / 2;
+    fitView([[0, 0], B, G], dt, vw);
+    if (!Number.isFinite(view.span)) return null;
+    // view.span is the radial extent of the clear area; the grid and stars still cover the whole canvas
+    const s = vw.h / view.span;
+    const X = (x) => ox + (x - view.cx) * s;
+    const Y = (y) => oy - (y - view.cy) * s;
+
+    // grid in round metres
+    const step = niceStep(H / s);
+    ctx.strokeStyle = "rgba(60, 86, 130, 0.16)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    const x0 = view.cx - ox / s, x1 = view.cx + (W - ox) / s;
+    const y0 = view.cy - (H - oy) / s, y1 = view.cy + oy / s;
+    for (let x = Math.ceil(x0 / step) * step; x <= x1; x += step) { ctx.moveTo(Math.round(X(x)) + 0.5, 0); ctx.lineTo(Math.round(X(x)) + 0.5, H); }
+    for (let y = Math.ceil(y0 / step) * step; y <= y1; y += step) { ctx.moveTo(0, Math.round(Y(y)) + 0.5); ctx.lineTo(W, Math.round(Y(y)) + 0.5); }
+    ctx.stroke();
+
+    // coast prediction and its closest pass to the Lady
+    const pred = predict();
+    ctx.setLineDash([3, 6]);
+    ctx.strokeStyle = "rgba(76, 201, 240, 0.55)";
+    ctx.lineWidth = 1.3;
+    ctx.beginPath();
+    pred.pts.forEach((p, i) => (i ? ctx.lineTo(X(p[1]), Y(p[0])) : ctx.moveTo(X(p[1]), Y(p[0]))));
+    ctx.stroke();
+    ctx.setLineDash([]);
+    if (pred.pass) {
+      ctx.strokeStyle = C.bandit;
+      ctx.beginPath(); ctx.arc(X(pred.at[1]), Y(pred.at[0]), 4, 0, Math.PI * 2); ctx.stroke();
+    }
+
+    // trails
+    const trail = (pts, color, now) => {
+      ctx.strokeStyle = color;
+      ctx.globalAlpha = 0.55;
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      pts.forEach((p, i) => (i ? ctx.lineTo(X(p[1]), Y(p[0])) : ctx.moveTo(X(p[1]), Y(p[0]))));
+      ctx.lineTo(X(now[0]), Y(now[1]));
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    };
+    trail(trails.guard, C.guard, G);
+    trail(trails.bandit, C.bandit, B);
+
+    // threat line when the Guard is close
+    const dBG = Math.hypot(B[0] - G[0], B[1] - G[1]);
+    if (dBG < 400) {
+      ctx.strokeStyle = `rgba(239, 71, 111, ${0.25 + 0.5 * (1 - dBG / 400)})`;
+      ctx.setLineDash([6, 5]);
+      ctx.beginPath(); ctx.moveTo(X(G[0]), Y(G[1])); ctx.lineTo(X(B[0]), Y(B[1])); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    // capture rings, true to scale when visible
+    ring(X(0), Y(0), sim.captureDist * s, C.lady);
+    ring(X(G[0]), Y(G[1]), sim.captureDist * s, C.guard);
+
+    // actors
+    drawLady(X(0), Y(0));
+    drawShip(X(G[0]), Y(G[1]), C.guard, sim.lastFg, lady, false);
+    drawShip(X(B[0]), Y(B[1]), C.bandit, sim.lastFb, lady, true, time);
+    label("Lady", X(0), Y(0), C.lady, -1, "left");
+    const bxs = X(B[0]), bys = Y(B[1]), gxs = X(G[0]), gys = Y(G[1]);
+    const bName = autopilot ? "Bandit · auto" : "Bandit (you)";
+    if (Math.hypot(gxs - bxs, gys - bys) < 60) {     // keep the two labels apart when the Guard is on top of you
+      label(bName, bxs, bys, C.bandit, gys < bys ? 1 : -1, gxs > bxs ? "right" : "left");
+      label("Guard", gxs, gys, C.guard, gys < bys ? -1 : 1, gxs > bxs ? "left" : "right");
+    } else {
+      label("Guard", gxs, gys, C.guard, 1, "left");
+      label(bName, bxs, bys, C.bandit, -1, "left");
+    }
+
+    // scale bar
+    const barM = niceStep(H / s) * (W < 520 ? 1 : 2);
+    const bx = lay.barX, by = lay.barY;
+    ctx.strokeStyle = C.ink; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(bx + barM * s, by); ctx.moveTo(bx, by - 4); ctx.lineTo(bx, by + 4);
+    ctx.moveTo(bx + barM * s, by - 4); ctx.lineTo(bx + barM * s, by + 4); ctx.stroke();
+    ctx.fillStyle = C.ink; ctx.font = "11px 'IBM Plex Mono', monospace";
+    ctx.fillText(barM >= 1000 ? `${barM / 1000} km` : `${barM} m`, bx, by - 8);
+    // frame compass: up is away from Kerbin, right is the direction of orbit
+    if (lay.compass) {
+    const ax = bx + 8, ay = by - 34;
+    ctx.strokeStyle = C.dim; ctx.fillStyle = C.dim; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(ax, ay - 22); ctx.moveTo(ax, ay); ctx.lineTo(ax + 22, ay); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(ax, ay - 26); ctx.lineTo(ax - 3.5, ay - 19); ctx.lineTo(ax + 3.5, ay - 19); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(ax + 26, ay); ctx.lineTo(ax + 19, ay - 3.5); ctx.lineTo(ax + 19, ay + 3.5); ctx.closePath(); ctx.fill();
+    ctx.font = "10.5px 'IBM Plex Mono', monospace";
+    ctx.fillText("radial out", ax + 6, ay - 18);
+    ctx.fillText("along-track", ax + 30, ay + 4);
+    }
+
+    if (lay.inset) drawInset(B, G, lay.inset);
+    return pred;
+  }
+
+  function ring(x, y, r, color) {
+    if (r < 2.5) return;
+    ctx.strokeStyle = color; ctx.globalAlpha = 0.6; ctx.setLineDash([4, 4]); ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.stroke();
+    ctx.setLineDash([]); ctx.globalAlpha = 1;
+  }
+  function label(text, x, y, color, side, align) {
+    ctx.fillStyle = color;
+    ctx.font = "600 12px 'Chakra Petch', sans-serif";
+    ctx.textAlign = align;
+    ctx.fillText(text, x + (align === "right" ? -10 : 10), y + (side < 0 ? -10 : 18));
+    ctx.textAlign = "left";
+  }
+  function drawLady(x, y) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.fillStyle = C.lady;
+    ctx.shadowColor = C.lady; ctx.shadowBlur = 14;
+    ctx.beginPath();
+    for (let i = 0; i < 10; i++) {
+      const r = i % 2 ? 4 : 9, a = -Math.PI / 2 + i * Math.PI / 5;
+      ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+    }
+    ctx.closePath(); ctx.fill();
+    ctx.restore();
+  }
+  /** A ship marker with an exhaust plume opposite its thrust (thrust drawn in the Lady's LVLH frame). */
+  function drawShip(x, y, color, force, lady, isBandit, time = 0) {
+    const f = LBG.rows(LBG.lvlhBasis(lady.slice(0, 3), lady.slice(3)), force);
+    const fx = f[1], fy = -f[0];              // screen vector (along-track, -radial)
+    const mag = Math.hypot(fx, fy);
+    ctx.save();
+    ctx.translate(x, y);
+    if (mag > 1) {
+      const ux = fx / mag, uy = fy / mag;
+      const len = 10 + Math.min(1, mag / 8000) * 22 * (reduceMotion ? 1 : 0.85 + 0.3 * Math.random());
+      const grad = ctx.createLinearGradient(0, 0, -ux * len, -uy * len);
+      grad.addColorStop(0, "rgba(255, 214, 140, 0.95)");
+      grad.addColorStop(1, "rgba(242, 120, 40, 0)");
+      ctx.strokeStyle = grad; ctx.lineWidth = 5; ctx.lineCap = "round";
+      ctx.beginPath(); ctx.moveTo(-ux * 6, -uy * 6); ctx.lineTo(-ux * len, -uy * len); ctx.stroke();
+    }
+    ctx.fillStyle = color;
+    ctx.strokeStyle = "rgba(255,255,255,0.85)"; ctx.lineWidth = 1;
+    ctx.beginPath();
+    if (isBandit) ctx.arc(0, 0, 6, 0, Math.PI * 2);
+    else { ctx.moveTo(0, -7.5); ctx.lineTo(6.5, 5); ctx.lineTo(-6.5, 5); ctx.closePath(); }
+    ctx.fill(); ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawInset(B, G, box) {
+    const { size, x: x0, y: y0 } = box;
+    const R = 80;                                   // ±80 m around the Bandit
+    const k = size / (2 * R);
+    ctx.save();
+    ctx.fillStyle = "rgba(8, 13, 26, 0.9)";
+    ctx.strokeStyle = "rgba(76, 201, 240, 0.45)";
+    ctx.lineWidth = 1;
+    ctx.fillRect(x0, y0, size, size); ctx.strokeRect(x0 + 0.5, y0 + 0.5, size - 1, size - 1);
+    ctx.beginPath(); ctx.rect(x0, y0, size, size); ctx.clip();
+    const cx = x0 + size / 2, cy = y0 + size / 2;
+    const P = (p) => [cx + (p[0] - B[0]) * k, cy - (p[1] - B[1]) * k];
+    ctx.strokeStyle = "rgba(60, 86, 130, 0.25)";
+    ctx.beginPath(); ctx.moveTo(cx, y0); ctx.lineTo(cx, y0 + size); ctx.moveTo(x0, cy); ctx.lineTo(x0 + size, cy); ctx.stroke();
+    ring(cx, cy, sim.captureDist * k, C.guard);
+    const [lx, ly] = P([0, 0]);
+    ring(lx, ly, sim.captureDist * k, C.lady);
+    if (Math.abs(lx - cx) < size && Math.abs(ly - cy) < size) drawLady(lx, ly);
+    const tail = trails.guard.slice(-24).map((p) => P([p[1], p[0]]));
+    ctx.strokeStyle = C.guard; ctx.globalAlpha = 0.55; ctx.beginPath();
+    tail.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+    const [gx, gy] = P(G); ctx.lineTo(gx, gy); ctx.stroke(); ctx.globalAlpha = 1;
+    ctx.fillStyle = C.guard; ctx.beginPath(); ctx.moveTo(gx, gy - 6); ctx.lineTo(gx + 5, gy + 4); ctx.lineTo(gx - 5, gy + 4); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = C.bandit; ctx.beginPath(); ctx.arc(cx, cy, 4.5, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+    ctx.fillStyle = C.dim; ctx.font = "10.5px 'IBM Plex Mono', monospace";
+    ctx.fillText(`close-up ±${R} m`, x0 + 6, y0 + 14);
+  }
+
+  // ---------------------------------------------------------------- HUD
+  function updateHud(pred) {
+    const [lady, bandit, guard] = sim.states;
+    const [dL, cL] = closing(bandit, lady);
+    const [dG, cG] = closing(bandit, guard);
+    $("r-clock").textContent = `T+ ${sim.t.toFixed(1)} s / ${sim.timeout}`;
+    $("r-lady").textContent = `${fmtDist(dL)}  ${fmtSpeed(cL)}`;
+    const g = $("r-guard");
+    g.textContent = `${fmtDist(dG)}  ${fmtSpeed(cG)}`;
+    g.className = dG < 100 ? "warn" : "v-guard";
+    $("r-cpa").textContent = pred.pass ? `${fmtDist(pred.d)} at T+${(sim.t + pred.t).toFixed(0)}` : pred.receding ? "moving away" : "holding distance";
+    $("r-dv").textContent = `${LBG.deltaV(sim.bProp).toFixed(0)} m/s`;
+    $("r-prop").textContent = `${sim.bProp.toFixed(1)} kg`;
+    $("r-fuel").style.transform = `scaleX(${Math.max(0, sim.bProp / LBG.VP.prop)})`;
+    $("r-policy").textContent = POLICY_LABEL[sim.policy];
+    const fineOn = keys.has("fine") || touchFine;
+    $("r-fine").className = "tag" + (fineOn && !autopilot ? " on" : "");
+    $("r-auto").className = "tag" + (autopilot ? " on" : "");
+    $("r-warp").textContent = `${settings.warp}×`;
+    $("b-warp").textContent = `${settings.warp}×`;
+  }
+
+  // ---------------------------------------------------------------- loop
+  let last = performance.now();
+  function frame(now) {
+    const dt = Math.max(0, (now - last) / 1000);
+    last = now;
+    if (mode === "flying") advance(dt);
+    drawBackdrop(now);
+    if (sim) {
+      const pred = drawScene(now, Math.min(dt, 0.1));
+      if (pred && mode !== "briefing") updateHud(pred);
+    }
+    requestAnimationFrame(frame);
+  }
+
+  function start() {
+    resize();
+    applySetupToForm();
+    newMission();               // the briefing shows the starting geometry behind the card
+    requestAnimationFrame((t) => { last = t; frame(t); });
+    $("start").focus({ preventScroll: true });
+  }
+  if (window.claude && window.claude.hot) {
+    window.claude.hot.snapshot?.(() => ({ settings: { policy: settings.policy, init: settings.init, warp: settings.warp } }));
+  }
+  if (window.claude && window.claude.hot && window.claude.hot.ready) window.claude.hot.ready(start);
+  else start();
+})();
+</script>
+</body>
+</html>
